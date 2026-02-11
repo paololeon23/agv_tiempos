@@ -194,15 +194,3 @@ select:focus {
     outline: none;
 }
 
-
-input[type="time"] {
-    font-size: 1.3rem; /* Más grande para ver bien los números */
-    text-align: center;
-    color: #2f7cc0;
-    font-weight: bold;
-}
-
-/* Eliminar el AM/PM si el navegador intenta ponerlo */
-input[type="time"]::-webkit-datetime-edit-ampm-field {
-   display: none;
-}

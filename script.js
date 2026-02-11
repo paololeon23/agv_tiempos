@@ -18,25 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebar.classList.remove('active');
     });
 
+    // turno
     const trazLibre = document.getElementById('traz-libre');
     if (trazLibre) {
         trazLibre.addEventListener('input', function() {
             this.value = this.value.toUpperCase();
         });
     }
-
-    const inputHora = document.getElementById('hora-inicio');
-
-    // Función para poner la hora actual en formato 24h
-    const establecerHoraActual = () => {
-        const ahora = new Date();
-        const horas = String(ahora.getHours()).padStart(2, '0');
-        const minutos = String(ahora.getMinutes()).padStart(2, '0');
-        inputHora.value = `${horas}:${minutos}`;
-    };
-
-    // Ejecutar al cargar la página
-    establecerHoraActual();
+    
 
     // Manejo del Formulario con SweetAlert2
     document.getElementById('cosecha-form').addEventListener('submit', (e) => {

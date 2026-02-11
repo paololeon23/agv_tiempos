@@ -32,61 +32,61 @@
                 <div class="row">
                     <div class="col">
                         <label><i data-lucide="calendar"></i> Fecha</label>
-                        <input type="date" value="2026-02-10">
+                        <input type="date" id="reg_fecha" value="2026-02-10" required>
                     </div>
                     <div class="col">
                         <label><i data-lucide="user"></i> Responsable</label>
-                        <input type="text" placeholder="Antony Siesquén">
+                        <input type="text" id="reg_responsable" placeholder="Antony Siesquén" required>
                     </div>
                 </div>
 
                 <div class="row">
                     <div class="col">
-                    <label><i data-lucide="map-pin"></i> Trazabilidad</label>
-                    <div class="input-group-triple">
-                        <select id="traz-e">
-                            <option value="" disabled selected>Etapa</option>
-                            <option value="E1">1</option>
-                            <option value="E2">2</option>
-                            <option value="E3">3</option>
-                            <option value="E4">4</option>
-                            <option value="E5">5</option>
-                            <option value="E6">6</option>
-                            <option value="E7">7</option>
-                            <option value="E8">8</option>
-                            <option value="E9">9</option>
-                        </select>
+                        <label><i data-lucide="map-pin"></i> Trazabilidad</label>
+                        <div class="input-group-triple">
+                            <select id="reg_traz_etapa" required>
+                                <option value="" disabled selected>Etapa</option>
+                                <option value="E1">E1</option>
+                                <option value="E2">E2</option>
+                                <option value="E3">E3</option>
+                                <option value="E4">E4</option>
+                                <option value="E5">E5</option>
+                                <option value="E6">E6</option>
+                                <option value="E7">E7</option>
+                                <option value="E8">E8</option>
+                                <option value="E9">E9</option>
+                            </select>
 
-                        <select id="traz-c">
-                            <option value="" disabled selected>Campo</option>
-                            <option value="C1">1</option>
-                            <option value="C2">2</option>
-                            <option value="C3">3</option>
-                            <option value="C4">4</option>
-                            <option value="C5">5</option>
-                            <option value="C6">6</option>
-                            <option value="C7">7</option>
-                            <option value="C8">8</option>
-                            <option value="C9">9</option>
-                        </select>
+                            <select id="reg_traz_campo" required>
+                                <option value="" disabled selected>Campo</option>
+                                <option value="C1">C1</option>
+                                <option value="C2">C2</option>
+                                <option value="C3">C3</option>
+                                <option value="C4">C4</option>
+                                <option value="C5">C5</option>
+                                <option value="C6">C6</option>
+                                <option value="C7">C7</option>
+                                <option value="C8">C8</option>
+                                <option value="C9">C9</option>
+                            </select>
 
-                        <input type="text" id="traz-libre" maxlength="3" placeholder="T4A" style="text-transform: uppercase;">
+                            <input type="text" id="reg_traz_libre" maxlength="3" placeholder="T4A" style="text-transform: uppercase;">
+                        </div>
                     </div>
-                </div>
                     <div class="col">
                         <label><i data-lucide="file-text"></i> Guía Remisión Acopio</label>
-                        <input type="number" placeholder="200416"  maxlength="6">
+                        <input type="number" id="reg_guia_remision" placeholder="200416" maxlength="6" required>
                     </div>
                 </div>
 
                 <div class="row">
                     <div class="col">
                         <label><i data-lucide="leaf"></i> Variedad</label>
-                        <input type="text" value="Ventura">
+                        <input type="text" id="reg_variedad" value="Ventura" required>
                     </div>
                     <div class="col">
                         <label><i data-lucide="truck"></i> Placa Vehículo</label>
-                        <input type="text" placeholder="9578-PK" maxlength="7" style="text-transform: uppercase;">
+                        <input type="text" id="reg_placa" placeholder="9578-PK" maxlength="7" style="text-transform: uppercase;" required>
                     </div>
                 </div>
 
@@ -94,27 +94,22 @@
                     <div class="col">
                         <label><i data-lucide="tag"></i> Rótulo de Muestra</label>
                         <div class="input-group-triple">
-                        <select id="traz-c">
-                            <option value="" disabled selected>Ensayo</option>
-                            <option value="Ensayo 1">1</option>
-                            <option value="Ensayo 2">2</option>
-                            <option value="Ensayo 3">3</option>
-                            <option value="Ensayo 4">4</option>
-                        </select>
+                            <select id="reg_rotulo_ensayo" required>
+                                <option value="" disabled selected>Ensayo</option>
+                                <option value="1">Ensayo 1</option>
+                                <option value="2">Ensayo 2</option>
+                                <option value="3">Ensayo 3</option>
+                                <option value="4">Ensayo 4</option>
+                            </select>
                         </div>
                     </div>
                     <div class="col">
-                        <label><i data-lucide="clock"></i> Hora Inicio General (24h)</label>
-                        <input type="time" 
-                            id="hora-inicio" 
-                            value="07:15" 
-                            min="00:00" 
-                            max="23:59" 
-                            required>
+                        <label><i data-lucide="clock"></i> Hora Inicio General</label>
+                        <input type="time" id="reg_hora_inicio" value="07:15" required>
                     </div>
                     <div class="col">
                         <label><i data-lucide="calendar-days"></i> Días Precosecha / N°</label>
-                        <input type="text" placeholder="6, 29">
+                        <input type="text" id="reg_dias_precosecha" placeholder="6, 29">
                     </div>
                 </div>
             </section>
