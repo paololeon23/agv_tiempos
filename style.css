@@ -168,6 +168,7 @@ label .lucide { color: var(--primary); }
     header h1 { font-size: 1.4rem; }
 }
 
+/* --- select --- */
 /* Contenedor triple para Trazabilidad */
 .input-group-triple {
     display: flex;
@@ -194,3 +195,34 @@ select:focus {
     outline: none;
 }
 
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 6px 10px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.sidebar-logo {
+    height: 80px; /* Ajusta según el tamaño de tu logo */
+    width: auto;
+    object-fit: contain;
+}
+
+#close-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+#close-btn:hover {
+    color: #ff4d4d; /* Un color de aviso al pasar el mouse */
+    transform: scale(1.1);
+}
+
+#close-btn i {
+    width: 28px;
+    height: 28px;
+}

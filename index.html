@@ -11,8 +11,12 @@
 
     <nav id="sidebar" class="sidebar">
         <div class="sidebar-header">
-            <h3>Agrovision</h3>
-            <button id="close-btn" class="icon-btn">✕</button>
+            <div class="brand">
+                <img src="logo.png" alt="Agrovision Logo" class="sidebar-logo">
+            </div>
+            <button id="close-btn" class="icon-btn" title="Cerrar menú">
+                <i data-lucide="x-circle"></i>
+            </button>
         </div>
         <ul>
             <li><a href="#" class="active"><i data-lucide="plus-circle"></i> Nueva Cosecha</a></li>
@@ -24,7 +28,7 @@
     <main class="main-content">
         <header>
             <button id="menu-btn" class="menu-btn"><i data-lucide="menu"></i> Menú</button>
-            <h1>Medición de Cosecha</h1>
+            <h1>MTTP ARÁNDANO</h1>
         </header>
 
         <form id="cosecha-form">
@@ -32,7 +36,7 @@
                 <div class="row">
                     <div class="col">
                         <label><i data-lucide="calendar"></i> Fecha</label>
-                        <input type="date" id="reg_fecha" value="2026-02-10" required>
+                        <input type="date" id="reg_fecha" required>
                     </div>
                     <div class="col">
                         <label><i data-lucide="user"></i> Responsable</label>
