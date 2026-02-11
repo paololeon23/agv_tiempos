@@ -12,7 +12,7 @@
     <nav id="sidebar" class="sidebar">
         <div class="sidebar-header">
             <div class="brand">
-                <img src="logo.png" alt="Agrovision Logo" class="sidebar-logo">
+                <img src="logo2.png" alt="Agrovision Logo" class="sidebar-logo">
             </div>
             <button id="close-btn" class="icon-btn" title="Cerrar menú">
                 <i data-lucide="x-circle"></i>
@@ -50,28 +50,28 @@
                         <div class="input-group-triple">
                             <select id="reg_traz_etapa" required>
                                 <option value="" disabled selected>Etapa</option>
-                                <option value="E1">E1</option>
-                                <option value="E2">E2</option>
-                                <option value="E3">E3</option>
-                                <option value="E4">E4</option>
-                                <option value="E5">E5</option>
-                                <option value="E6">E6</option>
-                                <option value="E7">E7</option>
-                                <option value="E8">E8</option>
-                                <option value="E9">E9</option>
+                                <option value="1">E1</option>
+                                <option value="2">E2</option>
+                                <option value="3">E3</option>
+                                <option value="4">E4</option>
+                                <option value="5">E5</option>
+                                <option value="6">E6</option>
+                                <option value="7">E7</option>
+                                <option value="8">E8</option>
+                                <option value="9">E9</option>
                             </select>
 
                             <select id="reg_traz_campo" required>
                                 <option value="" disabled selected>Campo</option>
-                                <option value="C1">C1</option>
-                                <option value="C2">C2</option>
-                                <option value="C3">C3</option>
-                                <option value="C4">C4</option>
-                                <option value="C5">C5</option>
-                                <option value="C6">C6</option>
-                                <option value="C7">C7</option>
-                                <option value="C8">C8</option>
-                                <option value="C9">C9</option>
+                                <option value="1">C1</option>
+                                <option value="2">C2</option>
+                                <option value="3">C3</option>
+                                <option value="4">C4</option>
+                                <option value="5">C5</option>
+                                <option value="6">C6</option>
+                                <option value="7">C7</option>
+                                <option value="8">C8</option>
+                                <option value="9">C9</option>
                             </select>
 
                             <input type="text" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" id="reg_traz_libre" placeholder="T4A" maxlength="3" style="text-transform: uppercase;">
@@ -124,34 +124,80 @@
 
             <hr>
 
-            <section class="form-group">
-                <h3>Registro de Pesos y Tiempos</h3>
-                <div class="row">
-                    <div class="col">
-                        <label><i data-lucide="package"></i> N° Clamshell</label>
-                        <input type="number" inputmode="numeric">
-                    </div>
-                    <div class="col">
-                        <label><i data-lucide="weight"></i> Peso Bruto (G)</label>
-                        <input type="number" step="0.1" placeholder="0.0">
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col">
-                        <label><i data-lucide="thermometer"></i> T° Pulpa (°C)</label>
-                        <input type="number" step="0.1">
-                    </div>
-                    <div class="col">
-                        <label><i data-lucide="sun"></i> T° Ambiente (°C)</label>
-                        <input type="number" step="0.1">
-                    </div>
-                </div>
-            </section>
+<div class="form-group main-card form-inline">
+    <label for="tipo_medicion">
+        <i data-lucide="layers"></i> Tipo de Medición:
+    </label>
+    <select id="tipo_medicion" class="select-modern" required>
+        <option value="" disabled selected>Seleccione para comenzar...</option>
+        <option value="visual">Calibrado Visual (Campo)</option>
+        <option value="acopio">Calibrado Acopio (Vacio)</option>
+    </select>
+</div>
 
-            <button type="submit" class="btn-submit">
-                <i data-lucide="save"></i> GUARDAR REGISTRO
-            </button>
+            <div id="wrapper_visual" class="collapsible-wrapper" style="display: none;">
+                <div class="collapsible-card">
+                    <div class="card-header" id="toggle-visual">
+                        <div class="header-info">
+                            <i data-lucide="scale"></i>
+                            <span>ENTRADA DE PESOS: VISUAL</span>
+                        </div>
+                        <i data-lucide="chevron-down" id="chevron-visual" class="chevron"></i>
+                    </div>
+
+                    <div class="card-body" id="body-visual">
+                        <div class="input-entry-zone">
+                            <div class="row-compact">
+                                <div class="col-input">
+                                    <label>N° Jarra</label>
+                                    <input type="number" id="v_jarra" placeholder="0" inputmode="numeric">
+                                </div>
+                                <div class="col-input">
+                                    <label>Peso 1 (g)</label>
+                                    <input type="number" id="v_peso1" step="0.1" placeholder="0.0" inputmode="decimal">
+                                </div>
+                                <div class="col-input">
+                                    <label>Peso 2 (g)</label>
+                                    <input type="number" id="v_peso2" step="0.1" placeholder="0.0" inputmode="decimal">
+                                </div>
+                                <div class="col-button-action">
+                                    <button type="button" id="btn-add-visual" class="btn-add-pro">
+                                        <i data-lucide="plus-circle"></i> Añadir
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-scroll">
+                            <table class="table-pro">
+                                <thead>
+                                    <tr>
+                                        <th>N° CLAM</th>
+                                        <th>N° JARRA</th>
+                                        <th>PESO 1</th>
+                                        <th>PESO 2</th>
+                                        <th>ACCION</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-visual">
+                                    </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="wrapper_acopio" class="collapsible-wrapper" style="display: none;">
+                <div class="empty-state">
+                    <i data-lucide="construction"></i>
+                    <p>Calibrado de Acopio: Módulo en espera.</p>
+                </div>
+            </div>
+
+        <button type="submit" id="btn-guardar-registro" class="btn-primary-blue">
+            GUARDAR REGISTRO
+        </button>
+
         </form>
     </main>
 
