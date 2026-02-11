@@ -90,9 +90,24 @@ body {
 }
 
 .sidebar ul li a.active {
-    background: #e0e0e0;
-    border-left: 4px solid var(--primary);
+    background: #e0e0e0; /* El fondo gris que tenías */
+    color: #000000bd; /* Texto en azul para que resalte */
     font-weight: bold;
+    position: relative; /* Necesario para posicionar el círculo */
+    overflow: hidden;   /* Para que el círculo se corte a la mitad */
+}
+
+/* El "mitad de círculo" en la derecha */
+.sidebar ul li a.active::after {
+    content: "";
+    position: absolute;
+    right: -15px;      /* Lo sacamos un poco para que solo se vea la mitad */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 32px;       /* Tamaño del círculo */
+    height: 37px;
+    background: var(--primary); /* Color azul */
+    border-radius: 50%; /* Lo hace un círculo perfecto */
 }
 
 /* ========== CONTENIDO PRINCIPAL ========== */

@@ -125,96 +125,231 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-    // --- 7. LÓGICA DE MEDICIÓN (CALIBRADO VISUAL) ---
-    const selectMedicion = document.getElementById('tipo_medicion');
-    const wrapVisual = document.getElementById('wrapper_visual');
-    const wrapAcopio = document.getElementById('wrapper_acopio');
-    const headVisual = document.getElementById('toggle-visual');
-    const bodyVisual = document.getElementById('body-visual');
-    const iconVisual = document.getElementById('chevron-visual');
+// --- 7. LÓGICA DE MEDICIÓN (CALIBRADO VISUAL) - MEJORADA ---
+const selectMedicion = document.getElementById('tipo_medicion');
+const selectRotulo = document.getElementById('reg_rotulo_ensayo');
+const wrapVisual = document.getElementById('wrapper_visual');
+const wrapAcopio = document.getElementById('wrapper_acopio');
 
-    let clamshellCount = 1;
+// Almacenamiento de datos por ensayo y tipo
+const datosEnsayos = {
+    visual: {
+        1: { clamCount: 1, rows: [] },
+        2: { clamCount: 1, rows: [] },
+        3: { clamCount: 1, rows: [] },
+        4: { clamCount: 1, rows: [] }
+    },
+    acopio: {
+        1: { clamCount: 1, rows: [] },
+        2: { clamCount: 1, rows: [] },
+        3: { clamCount: 1, rows: [] },
+        4: { clamCount: 1, rows: [] }
+    }
+};
 
-    // Mostrar/Ocultar
-    if (selectMedicion) {
-        selectMedicion.addEventListener('change', function() {
-            if (this.value === 'visual') {
-                wrapVisual.style.display = 'block';
-                wrapAcopio.style.display = 'none';
-                abrirVisual();
-            } else {
-                wrapVisual.style.display = 'none';
-                wrapAcopio.style.display = 'block';
-            }
+let tipoActual = '';
+let ensayoActual = '';
+
+// --- CAMBIO DE TIPO DE MEDICIÓN ---
+if (selectMedicion) {
+    selectMedicion.addEventListener('change', function() {
+        tipoActual = this.value;
+        
+        if (this.value === 'visual') {
+            wrapVisual.style.display = 'block';
+            wrapAcopio.style.display = 'none';
+        } else if (this.value === 'acopio') {
+            wrapVisual.style.display = 'none';
+            wrapAcopio.style.display = 'block';
+        }
+        
+        // Restaurar datos si hay un ensayo seleccionado
+        if (ensayoActual) {
+            restaurarDatosEnsayo(tipoActual, ensayoActual);
+        }
+    });
+}
+
+// --- CAMBIO DE ENSAYO ---
+if (selectRotulo) {
+    selectRotulo.addEventListener('change', function() {
+        ensayoActual = this.value;
+        
+        // Solo restaurar si hay un tipo de medición seleccionado
+        if (tipoActual) {
+            restaurarDatosEnsayo(tipoActual, ensayoActual);
+        }
+    });
+}
+
+// --- FUNCIÓN PARA RESTAURAR DATOS DEL ENSAYO ---
+function restaurarDatosEnsayo(tipo, ensayo) {
+    if (tipo === 'visual') {
+        const tbody = document.getElementById('tbody-visual');
+        tbody.innerHTML = ''; // Limpiar tabla visual
+        
+        const datos = datosEnsayos.visual[ensayo];
+        
+        // Restaurar filas guardadas
+        datos.rows.forEach(rowData => {
+            agregarFilaVisual(rowData, tbody);
         });
+        
+        // Abrir el wrapper visual
+        abrirVisual();
     }
+    // Aquí puedes agregar lógica similar para acopio cuando lo implementes
+}
 
-    function abrirVisual() {
-        bodyVisual.style.display = 'block';
-        if (iconVisual) iconVisual.classList.add('rotate');
-    }
+// --- FUNCIÓN PARA AGREGAR FILA A LA TABLA ---
+function agregarFilaVisual(data, tbody) {
+    const row = document.createElement('tr');
+    
+    row.setAttribute('data-clam', data.clam);
+    row.setAttribute('data-jarra', data.jarra);
+    row.setAttribute('data-p1', data.p1);
+    row.setAttribute('data-p2', data.p2);
 
-    function cerrarVisual() {
-        bodyVisual.style.display = 'none';
-        if (iconVisual) iconVisual.classList.remove('rotate');
-    }
+    row.innerHTML = `
+        <td class="clam-id">${data.clam}</td>
+        <td>${data.jarra}</td>
+        <td>${data.p1}g</td>
+        <td>${data.p2}g</td>
+        <td>
+            <button type="button" class="btn-delete-row">
+                <i data-lucide="trash-2"></i>
+            </button>
+        </td>
+    `;
 
-    if (headVisual) {
-        headVisual.addEventListener('click', () => {
-            const isVisible = bodyVisual.style.display === 'block';
-            isVisible ? cerrarVisual() : abrirVisual();
+    tbody.appendChild(row);
+    
+    if (window.lucide) lucide.createIcons();
+
+    // Evento de eliminar
+    row.querySelector('.btn-delete-row').addEventListener('click', () => {
+        row.remove();
+        // Actualizar almacenamiento
+        actualizarAlmacenamiento();
+    });
+}
+
+// --- ACTUALIZAR ALMACENAMIENTO DESDE LA TABLA ---
+function actualizarAlmacenamiento() {
+    if (!tipoActual || !ensayoActual) return;
+    
+    const tbody = document.getElementById('tbody-visual');
+    const rows = tbody.querySelectorAll('tr');
+    
+    datosEnsayos[tipoActual][ensayoActual].rows = [];
+    
+    rows.forEach(row => {
+        datosEnsayos[tipoActual][ensayoActual].rows.push({
+            clam: row.getAttribute('data-clam'),
+            jarra: row.getAttribute('data-jarra'),
+            p1: row.getAttribute('data-p1'),
+            p2: row.getAttribute('data-p2')
         });
+    });
+    
+    // Actualizar el contador de clamshell
+    if (rows.length > 0) {
+        const ultimoClam = parseInt(rows[rows.length - 1].getAttribute('data-clam'));
+        datosEnsayos[tipoActual][ensayoActual].clamCount = ultimoClam + 1;
     }
+}
 
-    // Añadir Pesos (CRECIENTE HACIA ABAJO)
-    const btnAddVisual = document.getElementById('btn-add-visual');
-    if (btnAddVisual) {
-        btnAddVisual.addEventListener('click', () => {
-            const jarra = document.getElementById('v_jarra').value;
-            const p1 = document.getElementById('v_peso1').value;
-            const p2 = document.getElementById('v_peso2').value;
+// --- TOGGLE VISUAL ---
+const headVisual = document.getElementById('toggle-visual');
+const bodyVisual = document.getElementById('body-visual');
+const iconVisual = document.getElementById('chevron-visual');
 
-            if (jarra && p1 && p2) {
-                const tbody = document.getElementById('tbody-visual');
-                const row = document.createElement('tr');
-                
-                // Guardamos la data en atributos data- para el JSON final
-                row.setAttribute('data-clam', clamshellCount);
-                row.setAttribute('data-jarra', jarra);
-                row.setAttribute('data-p1', p1);
-                row.setAttribute('data-p2', p2);
+function abrirVisual() {
+    bodyVisual.style.display = 'block';
+    if (iconVisual) iconVisual.classList.add('rotate');
+}
 
-                row.innerHTML = `
-                    <td class="clam-id">${clamshellCount}</td>
-                    <td>${jarra}</td>
-                    <td>${p1}g</td>
-                    <td>${p2}g</td>
-                    <td>
-                        <button type="button" class="btn-delete-row">
-                            <i data-lucide="trash-2"></i>
-                        </button>
-                    </td>
-                `;
+function cerrarVisual() {
+    bodyVisual.style.display = 'none';
+    if (iconVisual) iconVisual.classList.remove('rotate');
+}
 
-                // .appendChild() lo pone al final de la lista
-                tbody.appendChild(row);
-                
-                if (window.lucide) lucide.createIcons();
+if (headVisual) {
+    headVisual.addEventListener('click', () => {
+        const isVisible = bodyVisual.style.display === 'block';
+        isVisible ? cerrarVisual() : abrirVisual();
+    });
+}
 
-                row.querySelector('.btn-delete-row').addEventListener('click', () => row.remove());
+// --- AÑADIR PESOS ---
+const btnAddVisual = document.getElementById('btn-add-visual');
+if (btnAddVisual) {
+    btnAddVisual.addEventListener('click', () => {
+        if (!ensayoActual) {
+            Swal.fire({ 
+                title: 'Atención', 
+                text: 'Primero selecciona un Rótulo de Muestra (Ensayo)', 
+                icon: 'warning' 
+            });
+            return;
+        }
+        
+        const jarra = document.getElementById('v_jarra').value;
+        const p1 = document.getElementById('v_peso1').value;
+        const p2 = document.getElementById('v_peso2').value;
 
-                clamshellCount++;
-                document.getElementById('v_peso1').value = '';
-                document.getElementById('v_peso2').value = '';
-                document.getElementById('v_peso1').focus();
+        if (jarra && p1 && p2) {
+            const tbody = document.getElementById('tbody-visual');
+            const clamActual = datosEnsayos.visual[ensayoActual].clamCount;
+            
+            const rowData = {
+                clam: clamActual,
+                jarra: jarra,
+                p1: p1,
+                p2: p2
+            };
+            
+            // Agregar a la tabla
+            agregarFilaVisual(rowData, tbody);
+            
+            // Guardar en almacenamiento
+            datosEnsayos.visual[ensayoActual].rows.push(rowData);
+            datosEnsayos.visual[ensayoActual].clamCount++;
 
-            } else {
-                Swal.fire({ title: 'Atención', text: 'Datos incompletos', icon: 'warning' });
-            }
-        });
-    }
+            // Limpiar inputs
+            document.getElementById('v_jarra').value = '';
+            document.getElementById('v_peso1').value = '';
+            document.getElementById('v_peso2').value = '';
+            
+            // FOCO PARA LA SIGUIENTE ENTRADA
+            document.getElementById('v_jarra').focus();
 
- // --- 8. LÓGICA DE GUARDADO FINAL (ORDENADO PARA BACKEND) ---
+        } else {
+            Swal.fire({ title: 'Atención', text: 'Datos incompletos', icon: 'warning' });
+        }
+    });
+}
+
+// --- OPCIONAL: FUNCIÓN PARA OBTENER TODOS LOS DATOS AL GUARDAR ---
+function obtenerTodosLosDatos() {
+    // Actualizar almacenamiento antes de retornar
+    actualizarAlmacenamiento();
+    
+    return {
+        tipoMedicion: tipoActual,
+        ensayoActual: ensayoActual,
+        todosLosEnsayos: datosEnsayos
+    };
+}
+
+            // Fuerza a que se vea la fecha actual en la tablet
+        const campoFecha = document.getElementById('reg_fecha');
+        if (campoFecha) {
+            campoFecha.value = new Date().toISOString().split('T')[0];
+        }
+
+
+// --- 8. LÓGICA DE GUARDADO FINAL (ORDENADO PARA BACKEND) ---
 const btnGuardarGeneral = document.getElementById('btn-guardar-registro');
 
 if (btnGuardarGeneral) {
@@ -240,17 +375,62 @@ if (btnGuardarGeneral) {
             return;
         }
 
-        const filas = document.querySelectorAll('#tbody-visual tr');
-        
-        // Validación adicional: Al menos un registro si es visual
-        if (tipoMedicion === 'visual' && filas.length === 0) {
+        // Validación adicional: Rótulo de ensayo seleccionado
+        const rotuloSeleccionado = document.getElementById('reg_rotulo_ensayo').value;
+        if (!rotuloSeleccionado) {
             Swal.fire({
                 title: 'Atención',
-                text: 'Debes agregar al menos un registro de peso',
+                text: 'Debes seleccionar un Rótulo de Muestra (Ensayo)',
                 icon: 'warning',
                 confirmButtonColor: '#2f7cc0'
             });
             return;
+        }
+
+        // ⚠️ IMPORTANTE: Actualizar almacenamiento del ensayo actual antes de guardar
+        actualizarAlmacenamiento();
+
+        // Validar que al menos UN ensayo tenga datos
+        let hayDatos = false;
+        const datosDelTipo = datosEnsayos[tipoMedicion];
+        
+        for (let ensayo in datosDelTipo) {
+            if (datosDelTipo[ensayo].rows.length > 0) {
+                hayDatos = true;
+                break;
+            }
+        }
+
+        if (!hayDatos) {
+            Swal.fire({
+                title: 'Atención',
+                text: 'Debes agregar al menos un registro de peso en algún ensayo',
+                icon: 'warning',
+                confirmButtonColor: '#2f7cc0'
+            });
+            return;
+        }
+
+        // Construir array de ensayos con datos
+        const ensayosConDatos = [];
+        
+        for (let numEnsayo in datosDelTipo) {
+            const ensayo = datosDelTipo[numEnsayo];
+            
+            // Solo incluir ensayos que tengan datos
+            if (ensayo.rows.length > 0) {
+                ensayosConDatos.push({
+                    ensayo_numero: parseInt(numEnsayo),
+                    ensayo_nombre: `Ensayo ${numEnsayo}`,
+                    registros: ensayo.rows.map(row => ({
+                        id: parseInt(row.clam),
+                        jarra: parseInt(row.jarra),
+                        p1: parseFloat(row.p1),
+                        p2: parseFloat(row.p2)
+                    })),
+                    total_registros: ensayo.rows.length
+                });
+            }
         }
         
         // Construcción del objeto siguiendo el orden del formulario
@@ -261,20 +441,21 @@ if (btnGuardarGeneral) {
             variedad: document.getElementById('reg_variedad').value,
             placa: document.getElementById('reg_placa').value,
             hora_inicio: document.getElementById('reg_hora_inicio').value,
+            dias_precosecha: document.getElementById('reg_dias_precosecha').value || null,
             tipo_medicion: tipoMedicion,
             // Agrupamos trazabilidad
             trazabilidad: {
                 etapa: document.getElementById('reg_traz_etapa').value,
                 campo: document.getElementById('reg_traz_campo').value,
-                libre: document.getElementById('reg_traz_libre').value
+                libre: document.getElementById('reg_traz_libre').value || null
             },
-            // El detalle siempre al final como cuerpo del registro
-            detalle: Array.from(filas).map(f => ({
-                id: f.getAttribute('data-clam'),
-                jarra: f.getAttribute('data-jarra'),
-                p1: f.getAttribute('data-p1'),
-                p2: f.getAttribute('data-p2')
-            }))
+            // TODOS los ensayos con datos
+            ensayos: ensayosConDatos,
+            // Resumen
+            resumen: {
+                total_ensayos: ensayosConDatos.length,
+                total_registros: ensayosConDatos.reduce((sum, e) => sum + e.total_registros, 0)
+            }
         };
 
         // Para ver el orden REAL que recibirá el backend, lo pasamos por JSON.stringify
@@ -291,5 +472,4 @@ if (btnGuardarGeneral) {
         });
     });
 }
-
 });

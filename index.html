@@ -32,6 +32,19 @@
         </header>
 
         <form id="cosecha-form">
+
+            <div class="form-group main-card form-inline">
+                <label for="tipo_medicion">
+                    <i data-lucide="layers"></i> Tipo de Medición:
+                </label>
+                <select id="tipo_medicion" class="select-modern" required>
+                    <option value="" disabled selected>Seleccione para comenzar...</option>
+                    <option value="visual">Calibrado Visual (Campo)</option>
+                    <option value="acopio">Calibrado Acopio (Vacio)</option>
+                </select>
+            </div>
+
+
             <section class="form-group">
                 <div class="row">
                     <div class="col">
@@ -99,18 +112,7 @@
                 </div>
 
                 <div class="row">
-                    <div class="col">
-                        <label><i data-lucide="tag"></i> Rótulo de Muestra</label>
-                        <div class="input-group-triple">
-                            <select id="reg_rotulo_ensayo" required>
-                                <option value="" disabled selected>Ensayo</option>
-                                <option value="1">Ensayo 1</option>
-                                <option value="2">Ensayo 2</option>
-                                <option value="3">Ensayo 3</option>
-                                <option value="4">Ensayo 4</option>
-                            </select>
-                        </div>
-                    </div>
+
                     <div class="col">
                         <label><i data-lucide="clock"></i> Hora Inicio General</label>
                         <input type="time" id="reg_hora_inicio" value="07:15" required>
@@ -124,16 +126,18 @@
 
             <hr>
 
-<div class="form-group main-card form-inline">
-    <label for="tipo_medicion">
-        <i data-lucide="layers"></i> Tipo de Medición:
-    </label>
-    <select id="tipo_medicion" class="select-modern" required>
-        <option value="" disabled selected>Seleccione para comenzar...</option>
-        <option value="visual">Calibrado Visual (Campo)</option>
-        <option value="acopio">Calibrado Acopio (Vacio)</option>
-    </select>
-</div>
+            <div class="form-group main-card form-inline">
+                <label for="tipo_medicion">
+                    <i data-lucide="layers"></i> Rótulo de Muestra:
+                </label>
+                    <select id="reg_rotulo_ensayo" class="select-modern" required>
+                        <option value="" disabled selected>Seleccione para comenzar...</option>
+                        <option value="1">Ensayo 1</option>
+                        <option value="2">Ensayo 2</option>
+                        <option value="3">Ensayo 3</option>
+                        <option value="4">Ensayo 4</option>
+                    </select>
+            </div>
 
             <div id="wrapper_visual" class="collapsible-wrapper" style="display: none;">
                 <div class="collapsible-card">
