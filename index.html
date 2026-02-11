@@ -86,7 +86,7 @@
                     </div>
                     <div class="col">
                         <label><i data-lucide="truck"></i> Placa Vehículo</label>
-                        <input type="text" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" id="reg_placa" placeholder="9578-PK" maxlength="7" style="text-transform: uppercase;" required>
+                        <input type="text" oninput="this.value = this.value.replace(/[^A-Za-z0-9-]/g, '')" id="reg_placa" placeholder="9578-PK" maxlength="7" style="text-transform: uppercase;" required>
                     </div>
                 </div>
 
