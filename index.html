@@ -70,12 +70,12 @@
                                 <option value="C9">C9</option>
                             </select>
 
-                            <input type="text" id="reg_traz_libre" maxlength="3" placeholder="T4A" style="text-transform: uppercase;">
+                            <input type="text" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" id="reg_traz_libre" placeholder="T4A" maxlength="3" style="text-transform: uppercase;">
                         </div>
                     </div>
                     <div class="col">
                         <label><i data-lucide="file-text"></i> Guía Remisión Acopio</label>
-                        <input type="number" id="reg_guia_remision" placeholder="200416" maxlength="6" required>
+                        <input type="text" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" id="reg_guia_remision" placeholder="200416" maxlength="6" required>
                     </div>
                 </div>
 
@@ -86,7 +86,7 @@
                     </div>
                     <div class="col">
                         <label><i data-lucide="truck"></i> Placa Vehículo</label>
-                        <input type="text" id="reg_placa" placeholder="9578-PK" maxlength="7" style="text-transform: uppercase;" required>
+                        <input type="text" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" id="reg_placa" placeholder="9578-PK" maxlength="7" style="text-transform: uppercase;" required>
                     </div>
                 </div>
 
