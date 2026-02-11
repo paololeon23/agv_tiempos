@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Cosecha - Agrovision</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h3>Agrovision</h3>
+            <button id="close-btn" class="icon-btn">✕</button>
+        </div>
+        <ul>
+            <li><a href="#" class="active">Nueva Cosecha</a></li>
+            <li><a href="#">Historial</a></li>
+            <li><a href="#">Configuración</a></li>
+        </ul>
+    </nav>
+
+    <main class="main-content">
+        <header>
+            <button id="menu-btn" class="menu-btn">☰ Menú</button>
+            <h1>Medición de Cosecha</h1>
+        </header>
+
+        <form id="cosecha-form">
+            <section class="form-group">
+                <div class="row">
+                    <div class="col">
+                        <label>Fecha</label>
+                        <input type="date" value="2026-02-10">
+                    </div>
+                    <div class="col">
+                        <label>Responsable</label>
+                        <input type="text" placeholder="Nombre completo">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <label>Variedad</label>
+                        <input type="text" value="Ventura">
+                    </div>
+                    <div class="col">
+                        <label>Placa Vehículo</label>
+                        <input type="text" placeholder="0000-XX">
+                    </div>
+                </div>
+            </section>
+
+            <hr>
+
+            <section class="form-group">
+                <h3>Registro de Pesos y Tiempos</h3>
+                <div class="row">
+                    <div class="col">
+                        <label>N° Clamshell</label>
+                        <input type="number" inputmode="numeric">
+                    </div>
+                    <div class="col">
+                        <label>Peso Bruto (G)</label>
+                        <input type="number" step="0.1" placeholder="0.0">
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col">
+                        <label>T° Pulpa (°C)</label>
+                        <input type="number" step="0.1">
+                    </div>
+                    <div class="col">
+                        <label>T° Ambiente (°C)</label>
+                        <input type="number" step="0.1">
+                    </div>
+                </div>
+            </section>
+
+            <button type="submit" class="btn-submit">GUARDAR REGISTRO</button>
+        </form>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
