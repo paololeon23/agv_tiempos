@@ -168,3 +168,28 @@ label .lucide { color: var(--primary); }
     header h1 { font-size: 1.4rem; }
 }
 
+/* Contenedor triple para Trazabilidad */
+.input-group-triple {
+    display: flex;
+    gap: 5px; /* Espacio mínimo entre selectores */
+}
+
+.input-group-triple select {
+    flex: 1; /* Los selectores ocupan el mismo espacio */
+    padding: 12px 5px;
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    background-color: white;
+    font-size: 1rem;
+}
+
+.input-group-triple input {
+    flex: 1.5; /* El input libre es ligeramente más ancho */
+    text-align: center;
+}
+
+/* Estilo para que se vea bien bajo el sol (contraste fuerte en selects) */
+select:focus {
+    border-color: var(--primary);
+    outline: none;
+}

@@ -18,6 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebar.classList.remove('active');
     });
 
+    const trazLibre = document.getElementById('traz-libre');
+    if (trazLibre) {
+        trazLibre.addEventListener('input', function() {
+            this.value = this.value.toUpperCase();
+        });
+    }
+
     // Manejo del Formulario con SweetAlert2
     document.getElementById('cosecha-form').addEventListener('submit', (e) => {
         e.preventDefault();

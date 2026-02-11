@@ -42,9 +42,37 @@
 
                 <div class="row">
                     <div class="col">
-                        <label><i data-lucide="map-pin"></i> Trazabilidad</label>
-                        <input type="text" placeholder="Ej: E3-C2-T4A">
+                    <label><i data-lucide="map-pin"></i> Trazabilidad</label>
+                    <div class="input-group-triple">
+                        <select id="traz-e">
+                            <option value="" disabled selected>Etapa</option>
+                            <option value="E1">E1</option>
+                            <option value="E2">E2</option>
+                            <option value="E3">E3</option>
+                            <option value="E4">E4</option>
+                            <option value="E5">E5</option>
+                            <option value="E6">E6</option>
+                            <option value="E7">E7</option>
+                            <option value="E8">E8</option>
+                            <option value="E9">E9</option>
+                        </select>
+
+                        <select id="traz-c">
+                            <option value="" disabled selected>Campo</option>
+                            <option value="C1">C1</option>
+                            <option value="C2">C2</option>
+                            <option value="C3">C3</option>
+                            <option value="C4">C4</option>
+                            <option value="C5">C5</option>
+                            <option value="C6">C6</option>
+                            <option value="C7">C7</option>
+                            <option value="C8">C8</option>
+                            <option value="C9">C9</option>
+                        </select>
+
+                        <input type="text" id="traz-libre" maxlength="3" placeholder="T4A" style="text-transform: uppercase;">
                     </div>
+                </div>
                     <div class="col">
                         <label><i data-lucide="file-text"></i> Guía Remisión Acopio</label>
                         <input type="number" placeholder="200416">
