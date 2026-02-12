@@ -139,6 +139,66 @@
                     </select>
             </div>
 
+
+<div id="wrapper_jarras" class="collapsible-wrapper" style="display: none;">
+    <div class="collapsible-card">
+        <div class="card-header collapsible-toggle" data-target="body-jarras">
+            <div class="header-info">
+                <i data-lucide="timer"></i>
+                <span>TIEMPO DE LLENADO DE JARRAS (HORA)</span>
+            </div>
+            <i data-lucide="chevron-down" class="chevron"></i>
+        </div>
+
+        <div class="card-body" id="body-jarras">
+            <div class="table-scroll">
+                <table class="table-field-style">
+                    <thead>
+                        <tr>
+                            <th class="b-left">ITEM</th> 
+                            <th>N° JARRA (VINCULO)</th>
+                            <th>OBSERVACIÓN / TRASLADO</th>
+                            <th title="Hora Inicio"><i data-lucide="play-circle"></i><br>INICIO</th>
+                            <th title="Hora Término"><i data-lucide="check-circle"></i><br>TÉRMINO</th>
+                            <th title="Tiempo Empleado"><i data-lucide="hourglass"></i><br>TOTAL</th>
+                            <th class="b-right">ACCION</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="input-table-row">
+                            <td class="b-left">
+                                <span id="next_row_jarras">0</span> 
+                            </td>
+                            <td>
+                                <input type="number" id="j_num_jarra" placeholder="ID Jarra" inputmode="numeric">
+                            </td>
+                            <td>
+                                <input type="text" id="j_observacion" placeholder="Ej: Cosecha/Traslado">
+                            </td>
+                            <td>
+                                <input type="time" id="j_hora_inicio">
+                            </td>
+                            <td>
+                                <input type="time" id="j_hora_termino">
+                            </td>
+                            <td>
+                                <span id="j_tiempo_empleado" style="font-weight: bold; color: #555;">0'</span>
+                            </td>
+                            <td class="b-right">
+                                <button type="button" id="btn-add-jarras" class="btn-mini-add">
+                                    <i data-lucide="plus"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                    <tbody id="tbody-jarras">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="wrapper_visual" class="collapsible-wrapper" style="display: none;">
     <div class="collapsible-card">
         <div class="card-header collapsible-toggle" data-target="body-visual">
@@ -288,65 +348,6 @@
                         </tr>
                     </tbody>
                     <tbody id="tbody-temperaturas"></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div id="wrapper_jarras" class="collapsible-wrapper" style="display: none;">
-    <div class="collapsible-card">
-        <div class="card-header collapsible-toggle" data-target="body-jarras">
-            <div class="header-info">
-                <i data-lucide="timer"></i>
-                <span>TIEMPO DE LLENADO DE JARRAS (HORA)</span>
-            </div>
-            <i data-lucide="chevron-down" class="chevron"></i>
-        </div>
-
-        <div class="card-body" id="body-jarras">
-            <div class="table-scroll">
-                <table class="table-field-style">
-                    <thead>
-                        <tr>
-                            <th class="b-left">N° CLAM</th> 
-                            <th>N° JARRA</th>
-                            <th>OBSERVACIÓN / TRASLADO</th>
-                            <th title="Hora Inicio"><i data-lucide="play-circle"></i><br>INICIO</th>
-                            <th title="Hora Término"><i data-lucide="check-circle"></i><br>TÉRMINO</th>
-                            <th title="Tiempo Empleado"><i data-lucide="hourglass"></i><br>TOTAL</th>
-                            <th class="b-right">ACCION</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="input-table-row">
-                            <td class="b-left">
-                                <span id="next_clam_jarras">0</span> 
-                            </td>
-                            <td>
-                                <input type="number" id="j_num_jarra" placeholder="0" inputmode="numeric">
-                            </td>
-                            <td>
-                                <input type="text" id="j_observacion" placeholder="Ej: Cosecha/Traslado">
-                            </td>
-                            <td>
-                                <input type="time" id="j_hora_inicio">
-                            </td>
-                            <td>
-                                <input type="time" id="j_hora_termino">
-                            </td>
-                            <td>
-                                <span id="j_tiempo_empleado" style="font-weight: bold; color: #555;">0'</span>
-                            </td>
-                            <td class="b-right">
-                                <button type="button" id="btn-add-jarras" class="btn-mini-add">
-                                    <i data-lucide="plus"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    </tbody>
-                    <tbody id="tbody-jarras">
-                        </tbody>
                 </table>
             </div>
         </div>
