@@ -78,11 +78,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // 4. INTERFAZ DE USUARIO (SIDEBAR)
+    // 4. INTERFAZ DE USUARIO (SIDEBAR + VISTAS)
     // ========================================
     const sidebar = document.getElementById('sidebar');
     const menuBtn = document.getElementById('menu-btn');
     const closeBtn = document.getElementById('close-btn');
+    const cosechaForm = document.getElementById('cosecha-form');
+    const historialView = document.getElementById('view-historial');
+    const recomendacionesView = document.getElementById('view-recomendaciones');
 
     if (menuBtn && sidebar) {
         menuBtn.addEventListener('click', (e) => {
@@ -105,6 +108,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Cambio de vista (Nueva / Historial)
+    function setActiveView(view) {
+        const links = document.querySelectorAll('.nav-link');
+        links.forEach(a => {
+            const v = a.getAttribute('data-view');
+            if (v === view) a.classList.add('active');
+            else a.classList.remove('active');
+        });
+
+        if (cosechaForm) cosechaForm.style.display = (view === 'nueva') ? 'block' : 'none';
+        if (historialView) historialView.style.display = (view === 'historial') ? 'block' : 'none';
+        if (recomendacionesView) recomendacionesView.style.display = (view === 'recomendaciones') ? 'block' : 'none';
+        if (view === 'historial') renderHistorial();
+    }
+
+    document.querySelectorAll('.nav-link').forEach(a => {
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            const view = a.getAttribute('data-view');
+            if (view) setActiveView(view);
+        });
+    });
+
     // ========================================
     // 5. VALIDACIONES DE ENTRADA
     // ========================================
@@ -122,17 +148,115 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // 6. MANEJO DEL FORMULARIO (SUBMIT)
+    // 6. MANEJO DEL FORMULARIO (SUBMIT / CAMBIOS)
     // ========================================
-    const cosechaForm = document.getElementById('cosecha-form');
     if (cosechaForm) {
+        // Nunca hacemos submit tradicional, todo va por JS
         cosechaForm.addEventListener('submit', (e) => {
             e.preventDefault();
+        });
+
+        // Cualquier cambio en el formulario marca que hay datos sin guardar
+        cosechaForm.addEventListener('input', () => {
+            window.formHasChanges = true;
+        });
+        cosechaForm.addEventListener('change', () => {
+            window.formHasChanges = true;
         });
     }
 
     // ========================================
-    // 7. SISTEMA DE MEDICIÓN - CONFIGURACIÓN
+    // 7. HISTORIAL - RENDER
+    // ========================================
+    function renderHistorial() {
+        const contenedor = document.getElementById('historial-list');
+        if (!contenedor) return;
+
+        const items = JSON.parse(localStorage.getItem('tiempos_agro_seguro_v1')) || [];
+        contenedor.innerHTML = '';
+
+        if (items.length === 0) {
+            contenedor.innerHTML = '<div class="empty-state"><p>No hay registros en el historial.</p></div>';
+            return;
+        }
+
+        // Agrupar por fecha (FECHA viene en col 0 de cada fila)
+        const gruposPorFecha = {};
+        items.forEach(item => {
+            const rows = item.rows || [];
+            if (!rows.length) return;
+            const fecha = rows[0][0] || (item.timestamp || '').split(' ')[0];
+
+            if (!gruposPorFecha[fecha]) gruposPorFecha[fecha] = [];
+            gruposPorFecha[fecha].push(item);
+        });
+
+        Object.entries(gruposPorFecha).forEach(([fecha, itemsDeDia]) => {
+            // Por día, agrupar por ensayo
+            const ensayosMap = {};
+
+            itemsDeDia.forEach(item => {
+                const estado = item.status === 'subido' ? 'subido' : 'pendiente';
+                (item.rows || []).forEach(row => {
+                    const ensayoNum = row[10];  // ENSAYO_NUMERO
+                    const ensayoNom = row[11];  // ENSAYO_NOMBRE
+                    const clave = `${ensayoNum}|${ensayoNom}`;
+
+                    if (!ensayosMap[clave]) {
+                        ensayosMap[clave] = {
+                            ensayoNum,
+                            ensayoNom,
+                            totalClamshells: 0,
+                            estados: new Set()
+                        };
+                    }
+                    ensayosMap[clave].totalClamshells += 1;
+                    ensayosMap[clave].estados.add(estado);
+                });
+            });
+
+            const bloque = document.createElement('div');
+            bloque.className = 'hist-date-group';
+
+            const cabecera = document.createElement('div');
+            cabecera.className = 'hist-date-header';
+            cabecera.innerHTML = `
+                <div class="hist-date-badge">
+                    <span>${fecha}</span>
+                </div>
+                <span>Ensayos: ${Object.keys(ensayosMap).length}</span>
+            `;
+            bloque.appendChild(cabecera);
+
+            const contEnsayos = document.createElement('div');
+            contEnsayos.className = 'hist-ensayos';
+
+            Object.values(ensayosMap).forEach(info => {
+                const card = document.createElement('div');
+                card.className = 'hist-ensayo-card';
+
+                const estadoFinal = info.estados.has('pendiente') ? 'pendiente' : 'subido';
+                const claseEstado = estadoFinal === 'pendiente' ? 'hist-status-pendiente' : 'hist-status-subido';
+                const textoEstado = estadoFinal === 'pendiente' ? 'Pendiente' : 'Subida';
+
+                card.innerHTML = `
+                    <div class="hist-ensayo-title">${info.ensayoNom || ('Ensayo ' + info.ensayoNum)}</div>
+                    <div class="hist-ensayo-meta">
+                        <span>Clamshells: ${info.totalClamshells}</span>
+                        <span class="hist-status-badge ${claseEstado}">${textoEstado}</span>
+                    </div>
+                `;
+
+                contEnsayos.appendChild(card);
+            });
+
+            bloque.appendChild(contEnsayos);
+            contenedor.appendChild(bloque);
+        });
+    }
+
+    // ========================================
+    // 8. SISTEMA DE MEDICIÓN - CONFIGURACIÓN
     // ========================================
     
     const selectMedicion = document.getElementById('tipo_medicion');
@@ -1730,7 +1854,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnGuardarGeneral = document.getElementById('btn-guardar-registro');
 
     if (btnGuardarGeneral) {
+        let isSaving = false;
+        const toggleSaving = (saving) => {
+            isSaving = saving;
+            btnGuardarGeneral.disabled = saving;
+            btnGuardarGeneral.style.opacity = saving ? '0.5' : '1';
+        };
+
         btnGuardarGeneral.addEventListener('click', () => {
+            if (isSaving) return;
+
             const form = document.getElementById('cosecha-form');
             
             if (!form.checkValidity()) {
@@ -1971,6 +2104,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
+            // Desde aquí empezamos el guardado real; bloqueamos el botón
+            toggleSaving(true);
+
             // Guardar localmente (y sincronizar si hay red)
             saveLocal({ rows: allRows });
             updateUI();
@@ -1986,6 +2122,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('cosecha-form').reset();
                 campoFecha.value = new Date().toISOString().split('T')[0];
                 window.location.reload();
+            }).finally(() => {
+                toggleSaving(false);
             });
         });
     }

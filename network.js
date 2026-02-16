@@ -7,11 +7,12 @@ let isSyncing = false;
 // Actualiza el Card de Conexión y el contador de pendientes
 export function updateUI() {
     const items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    const pendingCount = items.filter(i => i.status !== 'subido').length;
     const countText = document.getElementById("pending-count");
     const statusText = document.getElementById("status-text");
     const statusCard = document.getElementById("network-status-container");
 
-    if (countText) countText.textContent = `Pendientes: ${items.length}`;
+    if (countText) countText.textContent = `Pendientes: ${pendingCount}`;
     
     if (navigator.onLine) {
         if (statusText) statusText.textContent = "En línea";
@@ -29,7 +30,8 @@ export const saveLocal = (data) => {
     const dataConId = { 
         ...data, 
         uid: 'REG-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
-        timestamp: new Date().toLocaleString()
+        timestamp: new Date().toLocaleString(),
+        status: 'pendiente'
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...current, dataConId]));
     updateUI();
@@ -50,19 +52,22 @@ async function sync() {
     if (isSyncing || !navigator.onLine) return;
     
     const items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    if (items.length === 0) return;
+    const pendingItems = items.filter(i => i.status !== 'subido');
+    if (pendingItems.length === 0) return;
 
     isSyncing = true;
-    let queue = [...items];
+    let queue = [...pendingItems];
 
     while (queue.length > 0) {
         const item = queue[0];
         try {
             await sendToCloud(item);
 
-            // Eliminar del storage tras enviar (con no-cors no podemos verificar respuesta)
+            // Marcar como subido (con no-cors asumimos éxito)
             let currentItems = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-            currentItems = currentItems.filter(i => i.uid !== item.uid);
+            currentItems = currentItems.map(i => 
+                i.uid === item.uid ? { ...i, status: 'subido' } : i
+            );
             localStorage.setItem(STORAGE_KEY, JSON.stringify(currentItems));
 
             queue.shift();

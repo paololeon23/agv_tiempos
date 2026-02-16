@@ -499,6 +499,175 @@ label .lucide {
     color: #666;
 }
 
+/* ========== RECOMENDACIONES ========== */
+.recom-section {
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.recom-section:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.recom-section h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1a3d6e;
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.recom-section h3 i {
+    width: 20px;
+    height: 20px;
+}
+
+.recom-warning-box {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.recom-warning-box p {
+    margin: 0;
+    color: #856404;
+    font-size: 0.95rem;
+}
+
+.recom-help-box {
+    background: #e3f2fd;
+    border-left: 4px solid #2196f3;
+    padding: 12px 16px;
+    border-radius: 6px;
+}
+
+.recom-help-box p {
+    margin: 6px 0;
+    color: #0d47a1;
+    font-size: 0.95rem;
+}
+
+.recom-help-box p:first-child {
+    margin-top: 0;
+}
+
+.recom-help-box p:last-child {
+    margin-bottom: 0;
+}
+
+.recom-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.recom-list li {
+    padding: 8px 0 8px 28px;
+    position: relative;
+    line-height: 1.6;
+    color: #333;
+}
+
+.recom-list li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: #4caf50;
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+.recom-list li strong {
+    color: #1a3d6e;
+}
+
+/* ========== HISTORIAL ========== */
+.historial-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.hist-date-group {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fafafa;
+}
+
+.hist-date-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: #f0f4fb;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1a3d6e;
+}
+
+.hist-date-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.hist-ensayos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 12px 12px;
+}
+
+.hist-ensayo-card {
+    flex: 1 1 180px;
+    min-width: 0;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    padding: 8px 10px;
+    background: #ffffff;
+    font-size: 0.85rem;
+}
+
+.hist-ensayo-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.hist-ensayo-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: #555;
+}
+
+.hist-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.hist-status-pendiente {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.hist-status-subido {
+    background: #e6f4ea;
+    color: #1b5e20;
+}
+
 /* ========== UTILIDADES ========== */
 .chevron { 
     transition: 0.3s ease; 

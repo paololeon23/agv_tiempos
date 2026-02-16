@@ -52,15 +52,45 @@ function doPost(e) {
       sheet.appendRow(headers);
     }
 
+    // ==== ANTI-DUPLICADOS ====
+    // Clave: toda la fila (54 columnas) convertida a string
+    const buildKey = function(row) {
+      return row.slice(0, 54).map(function(v) {
+        return (v === null || v === undefined) ? "" : String(v);
+      }).join("||");
+    };
+
+    // Leer filas existentes (sin encabezado) y construir set de claves
+    const lastRow = sheet.getLastRow();
+    var existingKeys = {};
+    if (lastRow > 1) {
+      const existingValues = sheet.getRange(2, 1, lastRow - 1, 54).getValues();
+      existingValues.forEach(function(r) {
+        var key = buildKey(r);
+        if (key) existingKeys[key] = true;
+      });
+    }
+
+    // Filtrar filas nuevas que no existan aún
+    var nuevasFilas = [];
     rows.forEach(function(row) {
       // Asegurar que la fila tenga 54 columnas (rellenar con vacío si falta)
       while (row.length < 54) {
         row.push("");
       }
-      sheet.appendRow(row.slice(0, 54));
+      var fila = row.slice(0, 54);
+      var key = buildKey(fila);
+      if (!existingKeys[key]) {
+        nuevasFilas.push(fila);
+        existingKeys[key] = true; // Evita duplicados dentro del mismo lote
+      }
     });
 
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, count: rows.length }))
+    if (nuevasFilas.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, nuevasFilas.length, 54).setValues(nuevasFilas);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, received: rows.length, inserted: nuevasFilas.length }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {

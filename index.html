@@ -21,9 +21,9 @@
             </button>
         </div>
         <ul>
-            <li><a href="#" class="active"><i data-lucide="plus-circle"></i> Nueva Cosecha</a></li>
-            <li><a href="#"><i data-lucide="history"></i> Historial</a></li>
-            <li><a href="#"><i data-lucide="settings"></i> Configuración</a></li>
+            <li><a href="#" class="active nav-link" data-view="nueva"><i data-lucide="plus-circle"></i> Nueva Cosecha</a></li>
+            <li><a href="#" class="nav-link" data-view="historial"><i data-lucide="history"></i> Historial</a></li>
+            <li><a href="#" class="nav-link" data-view="recomendaciones"><i data-lucide="settings"></i> Recomendaciones</a></li>
         </ul>
     </nav>
 
@@ -168,7 +168,7 @@
                         <tr>
                             <th class="b-left">ITEM</th> 
                             <th>N° JARRA</th>
-                            <th>TIPO</th>
+                            <th style="width: 23%;">TIPO</th>
                             <th title="Hora Inicio"><i data-lucide="play-circle"></i><br>INICIO</th>
                             <th title="Hora Término"><i data-lucide="check-circle"></i><br>TÉRMINO</th>
                             <th title="Tiempo Empleado"><i data-lucide="hourglass"></i><br>TOTAL</th>
@@ -606,6 +606,70 @@
         </button>
 
         </form>
+
+        <!-- Vista Historial (se muestra al hacer clic en menú Historial) -->
+        <section id="view-historial" style="display: none; margin-top: 20px;">
+            <div class="form-group main-card">
+                <h2 style="margin-top: 0; margin-bottom: 10px;">Historial de registros</h2>
+                <p style="margin-top: 0; color: #555; font-size: 0.9rem;">
+                    Resumen por día y ensayo. El estado se basa en si el registro aún está en cola (Pendiente) o ya fue enviado (Subido).
+                </p>
+                <div id="historial-list" class="historial-list">
+                    <!-- Contenido generado por script.js -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Recomendaciones -->
+        <!-- ==================== RECOMENDACIONES ==================== -->
+    <section id="view-recomendaciones" style="display: none; margin-top: 20px;">
+        <div class="form-group main-card">
+        <div class="section-header">
+            <h2><i data-lucide="info"></i> Recomendaciones de Uso</h2>
+        </div>
+
+        <div class="recom-section">
+            <h3><i data-lucide="alert-triangle"></i> Importante: Manejo de Datos</h3>
+            <div class="recom-warning-box">
+                <p><strong>🚫 NO REFRESCAR LA PÁGINA</strong> mientras estés llenando formularios o guardando datos. Perderás la información no guardada.</p>
+            </div>
+            <ul class="recom-list">
+                <li><strong>Guarda con frecuencia:</strong> Presiona el botón "Guardar Datos" regularmente para no perder tu trabajo.</li>
+                <li><strong>Revisa antes de guardar:</strong> Verifica que todos los datos ingresados sean correctos.</li>
+                <li><strong>Conexión a internet:</strong> La app funciona sin conexión, pero necesitas internet para sincronizar los datos con el servidor.</li>
+            </ul>
+        </div>
+
+        <div class="recom-section">
+            <h3><i data-lucide="upload-cloud"></i> Sincronización de Datos</h3>
+            <ul class="recom-list">
+                <li><strong>Automática:</strong> Cuando hay conexión, los datos se envían automáticamente al servidor.</li>
+                <li><strong>Pendientes:</strong> Si estás sin conexión, los datos quedan guardados localmente y se sincronizarán cuando vuelva la conexión.</li>
+                <li><strong>Verifica en Historial:</strong> Revisa el estado de tus registros (pendiente/subido) en la sección de Historial.</li>
+            </ul>
+        </div>
+
+        <div class="recom-section">
+            <h3><i data-lucide="help-circle"></i> ¿Tienes dudas?</h3>
+            <div class="recom-help-box">
+                <p><strong>Ante cualquier duda sobre la subida de datos o problemas técnicos:</strong></p>
+                <p>👉 Contacta al <strong>Área de Manejo de Información</strong></p>
+                <p>No intentes resolver problemas técnicos por tu cuenta si no estás seguro.</p>
+            </div>
+        </div>
+
+        <div class="recom-section">
+            <h3><i data-lucide="check-circle"></i> Mejores Prácticas</h3>
+            <ul class="recom-list">
+                <li>Completa todos los campos obligatorios (marcados con *)</li>
+                <li>Usa nombres y códigos correctos según tu área de trabajo</li>
+                <li>Mantén la aplicación actualizada instalándola en tu dispositivo</li>
+                <li>Reporta cualquier error o comportamiento extraño al área técnica</li>
+            </ul>
+        </div>
+    </div>
+    </section>
+    
     </main>
 
     <script src="librerias/sweetalert2.all.min.js"></script>
