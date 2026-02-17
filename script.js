@@ -455,19 +455,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok && res.error) Swal.fire({ title: 'Aviso', text: res.error, icon: 'info' });
             }
         } catch (err) {
-            if (txtFechasConDatos) txtFechasConDatos.textContent = '';
-            Swal.fire({ title: 'Error', text: err.message || 'No se pudieron cargar las fechas.', icon: 'error' });
+            var msg = err.message || 'No se pudieron cargar las fechas.';
+            if (txtFechasConDatos) txtFechasConDatos.textContent = msg + ' En Netlify, desactiva "Prevención de seguimiento" para esta página.';
+            Swal.fire({ title: 'Error', text: msg, icon: 'error' });
         }
     }
 
     const viewFechaEl = document.getElementById('view_fecha');
+    const viewEnsayosStatus = document.getElementById('view_ensayos_status');
     if (viewFechaEl) {
         viewFechaEl.addEventListener('change', async function () {
             const selEnsayo = document.getElementById('view_ensayo_nombre');
             if (!selEnsayo) return;
             const fecha = this.value ? this.value.trim() : '';
             selEnsayo.innerHTML = '<option value="" disabled selected>Seleccione ensayo...</option>';
+            if (viewEnsayosStatus) viewEnsayosStatus.textContent = '';
             if (!fecha) return;
+            if (viewEnsayosStatus) viewEnsayosStatus.textContent = 'Cargando ensayos...';
             try {
                 const res = await getEnsayosPorFecha(fecha);
                 if (res.ok && res.ensayos && res.ensayos.length > 0) {
@@ -477,10 +481,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         opt.textContent = e;
                         selEnsayo.appendChild(opt);
                     });
+                    if (viewEnsayosStatus) viewEnsayosStatus.textContent = res.fromCache ? 'Datos en caché.' : '';
                     if (res.fromCache) Swal.fire({ title: 'Datos guardados', text: 'Usando última data (sin conexión).', icon: 'info', timer: 2000, showConfirmButton: false });
+                } else {
+                    if (viewEnsayosStatus) viewEnsayosStatus.textContent = res.error || 'No hay ensayos para esta fecha.';
+                    if (res.error && res.error.indexOf('conexión') === -1) Swal.fire({ title: 'Aviso', text: res.error, icon: 'info' });
                 }
             } catch (err) {
-                Swal.fire({ title: 'Error', text: err.message || 'No se pudieron cargar los ensayos.', icon: 'error' });
+                var msg = err.message || 'No se pudieron cargar los ensayos.';
+                if (viewEnsayosStatus) viewEnsayosStatus.textContent = msg + ' Si el sitio está en Netlify, desactiva "Prevención de seguimiento" para esta página o permite script.google.com.';
+                Swal.fire({ title: 'Error', text: msg, icon: 'error' });
             }
         });
     }

@@ -133,9 +133,12 @@ function setPackingCache(partial) {
 /** GET vía JSONP (evita CORS: carga con <script>, misma URL que POST). */
 function fetchGetJsonp(url) {
     return new Promise((resolve, reject) => {
-        const name = '__tp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        const name = '__tiemposPacking_' + Date.now();
         const sep = url.indexOf('?') >= 0 ? '&' : '?';
         const scriptUrl = url + sep + 'callback=' + encodeURIComponent(name);
+
+        console.log('[GET Enviando] URL completa:', scriptUrl);
+        console.log('[GET Enviando] Parámetros en la URL:', url.replace(API_URL, '').replace(/^\?/, '') || '(ninguno, pide fechas)');
 
         const cleanup = () => {
             try { if (script.parentNode) script.remove(); } catch (_) {}
@@ -145,17 +148,20 @@ function fetchGetJsonp(url) {
 
         window[name] = (data) => {
             cleanup();
+            console.log('[GET Respuesta recibida]', data);
             resolve(data || { ok: false, error: "Respuesta inválida" });
         };
 
         const timer = setTimeout(() => {
             cleanup();
+            console.warn('[GET Timeout] No hubo respuesta en 15 s.');
             reject(new Error(MSJ_SIN_CONEXION));
         }, 15000);
 
         const script = document.createElement('script');
         script.onerror = () => {
             cleanup();
+            console.warn('[GET Error] Falló la carga del script (bloqueado o sin red).');
             reject(new Error(MSJ_SIN_CONEXION));
         };
         script.src = scriptUrl;
@@ -163,79 +169,90 @@ function fetchGetJsonp(url) {
     });
 }
 
-/** GET: lista de fechas. Con internet pide al servidor y guarda en caché; sin internet usa caché (última data). */
+/** GET: lista de fechas. Siempre intenta enviar la petición (con parámetros); si falla usa caché. */
 export async function getFechasConDatos() {
-    if (navigator.onLine) {
-        try {
-            const out = await fetchGetJsonp(API_URL);
-            if (out.ok && Array.isArray(out.fechas)) {
-                setPackingCache({ fechas: out.fechas });
-                return out;
-            }
-            const cache = getPackingCache();
-            if (cache.fechas && cache.fechas.length > 0) return { ok: true, fechas: cache.fechas, fromCache: true };
-            return { ok: false, fechas: [], error: out.error || "No se pudieron cargar las fechas." };
-        } catch (e) {
-            const cache = getPackingCache();
-            if (cache.fechas && cache.fechas.length > 0) return { ok: true, fechas: cache.fechas, fromCache: true };
-            return { ok: false, fechas: [], error: e && e.message ? e.message : MSJ_SIN_CONEXION };
+    console.log('[getFechasConDatos] Enviando: sin params → el servidor debe devolver { ok: true, fechas: ["2026-02-17", ...] }');
+    try {
+        const out = await fetchGetJsonp(API_URL);
+        if (out.ok && Array.isArray(out.fechas)) {
+            console.log('[getFechasConDatos] OK. Fechas recibidas:', out.fechas);
+            setPackingCache({ fechas: out.fechas });
+            return out;
         }
+        const cache = getPackingCache();
+        if (cache.fechas && cache.fechas.length > 0) {
+            console.log('[getFechasConDatos] Usando caché. Fechas:', cache.fechas);
+            return { ok: true, fechas: cache.fechas, fromCache: true };
+        }
+        console.warn('[getFechasConDatos] Sin datos. Error:', out.error);
+        return { ok: false, fechas: [], error: out.error || "No se pudieron cargar las fechas." };
+    } catch (e) {
+        const cache = getPackingCache();
+        if (cache.fechas && cache.fechas.length > 0) {
+            console.log('[getFechasConDatos] Falló la petición, usando caché.');
+            return { ok: true, fechas: cache.fechas, fromCache: true };
+        }
+        console.warn('[getFechasConDatos] Error:', e && e.message);
+        return { ok: false, fechas: [], error: e && e.message ? e.message : MSJ_SIN_CONEXION };
     }
-    const cache = getPackingCache();
-    if (cache.fechas && cache.fechas.length > 0) return { ok: true, fechas: cache.fechas, fromCache: true };
-    return { ok: false, fechas: [], error: MSJ_SIN_CONEXION };
 }
 
-/** GET: lista de ensayos para una fecha. Con internet actualiza caché; sin internet usa caché. */
+/** GET: lista de ensayos para una fecha. Siempre intenta enviar ?fecha=... ; si falla usa caché. */
 export async function getEnsayosPorFecha(fecha) {
-    if (navigator.onLine) {
-        try {
-            const url = API_URL + "?fecha=" + encodeURIComponent(fecha);
-            const out = await fetchGetJsonp(url);
-            if (out.ok && Array.isArray(out.ensayos)) {
-                setPackingCache({ ensayosByFecha: { [fecha]: out.ensayos } });
-                return out;
-            }
-            const cache = getPackingCache();
-            const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
-            if (cached && cached.length > 0) return { ok: true, ensayos: cached, fromCache: true };
-            return { ok: false, ensayos: [], error: out.error || "No se pudieron cargar los ensayos." };
-        } catch (e) {
-            const cache = getPackingCache();
-            const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
-            if (cached && cached.length > 0) return { ok: true, ensayos: cached, fromCache: true };
-            return { ok: false, ensayos: [], error: e && e.message ? e.message : MSJ_SIN_CONEXION };
+    console.log('[getEnsayosPorFecha] Enviando: fecha=' + fecha + ' → el servidor debe devolver { ok: true, ensayos: ["Ensayo 1", "Ensayo 2", ...] }');
+    try {
+        const url = API_URL + "?fecha=" + encodeURIComponent(fecha);
+        const out = await fetchGetJsonp(url);
+        if (out.ok && Array.isArray(out.ensayos)) {
+            console.log('[getEnsayosPorFecha] OK. Ensayos recibidos:', out.ensayos);
+            setPackingCache({ ensayosByFecha: { [fecha]: out.ensayos } });
+            return out;
         }
+        const cache = getPackingCache();
+        const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
+        if (cached && cached.length > 0) {
+            console.log('[getEnsayosPorFecha] Usando caché. Ensayos:', cached);
+            return { ok: true, ensayos: cached, fromCache: true };
+        }
+        console.warn('[getEnsayosPorFecha] Sin datos. Error:', out.error);
+        return { ok: false, ensayos: [], error: out.error || "No se pudieron cargar los ensayos." };
+    } catch (e) {
+        const cache = getPackingCache();
+        const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
+        if (cached && cached.length > 0) {
+            console.log('[getEnsayosPorFecha] Falló la petición, usando caché.');
+            return { ok: true, ensayos: cached, fromCache: true };
+        }
+        console.warn('[getEnsayosPorFecha] Error:', e && e.message);
+        return { ok: false, ensayos: [], error: e && e.message ? e.message : MSJ_SIN_CONEXION };
     }
-    const cache = getPackingCache();
-    const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
-    if (cached && cached.length > 0) return { ok: true, ensayos: cached, fromCache: true };
-    return { ok: false, ensayos: [], error: MSJ_SIN_CONEXION };
 }
 
-/** GET: fila por fecha y ensayo. Con internet guarda en caché; sin internet devuelve caché si coincide. */
+/** GET: fila por fecha y ensayo. Siempre intenta enviar ?fecha=...&ensayo_nombre=... ; si falla usa caché. */
 export async function getDatosPacking(fecha, ensayoNombre) {
-    if (navigator.onLine) {
-        try {
-            const url = API_URL + "?fecha=" + encodeURIComponent(fecha) + "&ensayo_nombre=" + encodeURIComponent(ensayoNombre);
-            const out = await fetchGetJsonp(url);
-            if (out.ok && out.data) {
-                setPackingCache({ lastRow: { fecha, ensayo_nombre: ensayoNombre, data: out.data } });
-                return out;
-            }
-            const cache = getPackingCache();
-            if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_nombre === ensayoNombre)
-                return { ok: true, data: cache.lastRow.data, fromCache: true };
-            return { ok: false, data: null, error: out.error || "No hay registro." };
-        } catch (e) {
-            const cache = getPackingCache();
-            if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_nombre === ensayoNombre)
-                return { ok: true, data: cache.lastRow.data, fromCache: true };
-            return { ok: false, data: null, error: e && e.message ? e.message : MSJ_SIN_CONEXION };
+    console.log('[getDatosPacking] Enviando: fecha=' + fecha + ', ensayo_nombre=' + ensayoNombre + ' → el servidor debe devolver { ok: true, data: { ENSAYO_NUMERO, TRAZ_ETAPA, ... } }');
+    try {
+        const url = API_URL + "?fecha=" + encodeURIComponent(fecha) + "&ensayo_nombre=" + encodeURIComponent(ensayoNombre);
+        const out = await fetchGetJsonp(url);
+        if (out.ok && out.data) {
+            console.log('[getDatosPacking] OK. Data recibida:', out.data);
+            setPackingCache({ lastRow: { fecha, ensayo_nombre: ensayoNombre, data: out.data } });
+            return out;
         }
+        const cache = getPackingCache();
+        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_nombre === ensayoNombre) {
+            console.log('[getDatosPacking] Usando caché.');
+            return { ok: true, data: cache.lastRow.data, fromCache: true };
+        }
+        console.warn('[getDatosPacking] Sin datos. Error:', out.error);
+        return { ok: false, data: null, error: out.error || "No hay registro." };
+    } catch (e) {
+        const cache = getPackingCache();
+        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_nombre === ensayoNombre) {
+            console.log('[getDatosPacking] Falló la petición, usando caché.');
+            return { ok: true, data: cache.lastRow.data, fromCache: true };
+        }
+        console.warn('[getDatosPacking] Error:', e && e.message);
+        return { ok: false, data: null, error: e && e.message ? e.message : MSJ_SIN_CONEXION };
     }
-    const cache = getPackingCache();
-    if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_nombre === ensayoNombre)
-        return { ok: true, data: cache.lastRow.data, fromCache: true };
-    return { ok: false, data: null, error: MSJ_SIN_CONEXION };
 }
