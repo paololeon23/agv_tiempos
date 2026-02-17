@@ -228,19 +228,19 @@ export async function getEnsayosPorFecha(fecha) {
     }
 }
 
-/** GET: fila por fecha y ensayo. Siempre intenta enviar ?fecha=...&ensayo_nombre=... ; si falla usa caché. */
-export async function getDatosPacking(fecha, ensayoNombre) {
-    console.log('[getDatosPacking] Enviando: fecha=' + fecha + ', ensayo_nombre=' + ensayoNombre + ' → el servidor debe devolver { ok: true, data: { ENSAYO_NUMERO, TRAZ_ETAPA, ... } }');
+/** GET: fila por fecha y ensayo_numero. Parámetros: ?fecha=...&ensayo_numero=1|2|3|4 */
+export async function getDatosPacking(fecha, ensayoNumero) {
+    console.log('[getDatosPacking] Enviando: fecha=' + fecha + ', ensayo_numero=' + ensayoNumero + ' → el servidor debe devolver { ok: true, data: { ... } }');
     try {
-        const url = API_URL + "?fecha=" + encodeURIComponent(fecha) + "&ensayo_nombre=" + encodeURIComponent(ensayoNombre);
+        const url = API_URL + "?fecha=" + encodeURIComponent(fecha) + "&ensayo_numero=" + encodeURIComponent(ensayoNumero);
         const out = await fetchGetJsonp(url);
         if (out.ok && out.data) {
             console.log('[getDatosPacking] OK. Data recibida:', out.data);
-            setPackingCache({ lastRow: { fecha, ensayo_nombre: ensayoNombre, data: out.data } });
+            setPackingCache({ lastRow: { fecha, ensayo_numero: ensayoNumero, data: out.data } });
             return out;
         }
         const cache = getPackingCache();
-        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_nombre === ensayoNombre) {
+        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_numero === ensayoNumero) {
             console.log('[getDatosPacking] Usando caché.');
             return { ok: true, data: cache.lastRow.data, fromCache: true };
         }
@@ -248,7 +248,7 @@ export async function getDatosPacking(fecha, ensayoNombre) {
         return { ok: false, data: null, error: out.error || "No hay registro." };
     } catch (e) {
         const cache = getPackingCache();
-        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_nombre === ensayoNombre) {
+        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_numero === ensayoNumero) {
             console.log('[getDatosPacking] Falló la petición, usando caché.');
             return { ok: true, data: cache.lastRow.data, fromCache: true };
         }

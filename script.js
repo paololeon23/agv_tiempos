@@ -468,14 +468,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const fechaEl = document.getElementById('view_fecha');
             const ensayoEl = document.getElementById('view_ensayo_nombre');
             const fecha = fechaEl && fechaEl.value ? fechaEl.value.trim() : '';
-            const ensayoNombre = ensayoEl && ensayoEl.value ? ensayoEl.value.trim() : '';
-            if (!fecha || !ensayoNombre) {
-                Swal.fire({ title: 'Faltan datos', text: 'Elige fecha y ensayo (Ensayo 1 a 4) para cargar.', icon: 'warning' });
+            const ensayoNumero = ensayoEl && ensayoEl.value ? ensayoEl.value.trim() : '';
+            if (!fecha || !ensayoNumero) {
+                Swal.fire({ title: 'Faltan datos', text: 'Elige fecha y ensayo (1 a 4) para cargar.', icon: 'warning' });
                 return;
             }
             if (viewEnsayosStatus) viewEnsayosStatus.textContent = 'Cargando...';
             try {
-                const res = await getDatosPacking(fecha, ensayoNombre);
+                const res = await getDatosPacking(fecha, ensayoNumero);
                 if (!res.ok || !res.data) {
                     if (viewEnsayosStatus) viewEnsayosStatus.textContent = res.error || 'No hay registro para esa fecha y ensayo.';
                     Swal.fire({ title: 'Sin datos', text: res.error || 'No hay registro para esa fecha y ensayo.', icon: 'info' });

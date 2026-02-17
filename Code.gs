@@ -165,21 +165,22 @@ function limpiarUidsAntiguos() {
 }
 
 /**
- * GET: dos parámetros principales (fecha + ensayo_nombre) para sacar la info y llenar el front.
+ * GET: dos parámetros (fecha + ensayo_numero) para sacar la info y llenar el front.
  * - fecha: yyyy-mm-dd (ej. 2026-02-17)
- * - ensayo_nombre: "Ensayo 1", "Ensayo 2", "Ensayo 3" o "Ensayo 4"
- * Devuelve: { ok: true, data: { ENSAYO_NUMERO, TRAZ_ETAPA, TRAZ_CAMPO, TRAZ_LIBRE, VARIEDAD, PLACA_VEHICULO, GUIA_REMISION } }
+ * - ensayo_numero: "1", "2", "3" o "4" (columna K de la hoja)
+ * Devuelve: { ok: true, data: { ... } } y fechas siempre en formato ["2026-02-17"].
  *
- * Otros modos (opcionales):
- * - Sin params: devuelve { ok: true, fechas: ["2026-02-17", ...] } (fechas con datos).
- * - Solo fecha: devuelve { ok: true, ensayos: ["Ensayo 1", ...] } (ensayos con datos para esa fecha).
+ * IMPORTANTE: Después de editar este archivo, en Apps Script ve a Implementar > Gestionar implementaciones >
+ * Editar la implementación activa > Versión: "Nueva versión" > Implementar. Si no, la Web App sigue con la versión vieja.
+ *
+ * Otros modos: sin params → fechas; solo fecha → ensayos.
  */
 function doGet(e) {
   var result = { ok: false, data: null, error: null, fechas: null, ensayos: null };
   try {
     var params = e && e.parameter ? e.parameter : {};
     var fecha = (params.fecha || '').toString().trim();
-    var ensayoNombre = (params.ensayo_nombre || '').toString().trim();
+    var ensayoNumero = (params.ensayo_numero || '').toString().trim();
     var callback = (params.callback || '').toString().trim();
     if (!/^[a-zA-Z0-9_]+$/.test(callback)) callback = '';
 
@@ -197,10 +198,13 @@ function doGet(e) {
 
     var data = sheet.getRange(2, 1, lastRow, 12).getValues();
 
-    /** Normaliza fecha de la hoja a yyyy-MM-dd para comparar y devolver (Date, string dd/MM/yyyy, yyyy-MM-dd, etc.). */
+    /**
+     * SIEMPRE devuelve yyyy-MM-dd (nunca "Tue Feb 17 2026 GMT-0500..."). Así Netlify recibe fechas cortas.
+     * Acepta: Date, string yyyy-MM-dd, dd/MM/yyyy, o string largo tipo "Tue Feb 17 2026 00:00:00 GMT-0500".
+     */
     function formatFecha(val) {
       if (val === null || val === undefined || val === '') return '';
-      if (val instanceof Date) return Utilities.formatDate(val, "America/Santiago", "yyyy-MM-dd");
+      if (val instanceof Date) return Utilities.formatDate(val, "GMT", "yyyy-MM-dd");
       var s = String(val).trim();
       if (!s) return '';
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
@@ -221,13 +225,15 @@ function doGet(e) {
         if (year >= 1900 && year <= 2100 && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
           d = new Date(year, month, day);
         }
+      } else if (s.indexOf('GMT') >= 0 || /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s/.test(s)) {
+        d = new Date(s);
       }
-      if (d && !isNaN(d.getTime())) return Utilities.formatDate(d, "America/Santiago", "yyyy-MM-dd");
+      if (d && !isNaN(d.getTime())) return Utilities.formatDate(d, "GMT", "yyyy-MM-dd");
       return s;
     }
 
-    // 1) Listar fechas con datos (sin fecha ni ensayo_nombre)
-    if (!fecha && !ensayoNombre) {
+    // 1) Listar fechas con datos (sin fecha ni ensayo_numero)
+    if (!fecha && !ensayoNumero) {
       var fechasSet = {};
       for (var i = 0; i < data.length; i++) {
         var f = formatFecha(data[i][0]);
@@ -239,13 +245,13 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    // 2) Listar ensayos para una fecha (solo fecha)
-    if (fecha && !ensayoNombre) {
+    // 2) Listar ensayos para una fecha (solo fecha) — devuelve números de ensayo (col K)
+    if (fecha && !ensayoNumero) {
       var ensayosSet = {};
       for (var j = 0; j < data.length; j++) {
         var rowFechaStr = formatFecha(data[j][0]);
         if (rowFechaStr === fecha) {
-          var en = String(data[j][11] || '').trim();
+          var en = String(data[j][10] || '').trim();
           if (en) ensayosSet[en] = true;
         }
       }
@@ -255,9 +261,9 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    // 3) Obtener fila por fecha + ensayo_nombre
-    if (!fecha || !ensayoNombre) {
-      result.error = 'Faltan parámetros: fecha y ensayo_nombre';
+    // 3) Obtener fila por fecha + ensayo_numero (columna K = número 1, 2, 3, 4)
+    if (!fecha || !ensayoNumero) {
+      result.error = 'Faltan parámetros: fecha y ensayo_numero';
       return returnOutput(result);
     }
 
@@ -265,8 +271,8 @@ function doGet(e) {
     for (var k = 0; k < data.length; k++) {
       var r = data[k];
       var rowFechaStr = formatFecha(r[0]);
-      var rowEnsayo = String(r[11] || '').trim();
-      if (rowFechaStr === fecha && rowEnsayo === ensayoNombre) {
+      var rowNum = String(r[10] != null ? r[10] : '').trim();
+      if (rowFechaStr === fecha && rowNum === ensayoNumero) {
         row = r;
         break;
       }
