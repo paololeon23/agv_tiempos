@@ -165,10 +165,14 @@ function limpiarUidsAntiguos() {
 }
 
 /**
- * GET: tres modos (solo Code.gs).
- * 1) Sin params: devuelve fechas que tienen datos en la hoja.
- * 2) Solo fecha: devuelve ensayos que tienen datos para esa fecha.
- * 3) fecha + ensayo_nombre: devuelve la fila (ENSAYO_NUMERO, TRAZ_*, VARIEDAD, PLACA, GUIA_REMISION).
+ * GET: dos parámetros principales (fecha + ensayo_nombre) para sacar la info y llenar el front.
+ * - fecha: yyyy-mm-dd (ej. 2026-02-17)
+ * - ensayo_nombre: "Ensayo 1", "Ensayo 2", "Ensayo 3" o "Ensayo 4"
+ * Devuelve: { ok: true, data: { ENSAYO_NUMERO, TRAZ_ETAPA, TRAZ_CAMPO, TRAZ_LIBRE, VARIEDAD, PLACA_VEHICULO, GUIA_REMISION } }
+ *
+ * Otros modos (opcionales):
+ * - Sin params: devuelve { ok: true, fechas: ["2026-02-17", ...] } (fechas con datos).
+ * - Solo fecha: devuelve { ok: true, ensayos: ["Ensayo 1", ...] } (ensayos con datos para esa fecha).
  */
 function doGet(e) {
   var result = { ok: false, data: null, error: null, fechas: null, ensayos: null };

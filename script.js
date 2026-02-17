@@ -1,4 +1,4 @@
-import { saveLocal, updateUI, getDatosPacking, getFechasConDatos, getEnsayosPorFecha } from './network.js';
+import { saveLocal, updateUI, getDatosPacking, getFechasConDatos } from './network.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -442,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const selEnsayo = document.getElementById('view_ensayo_nombre');
         if (!inputFecha || !selEnsayo) return;
         if (inputFecha.value) inputFecha.value = '';
-        selEnsayo.innerHTML = '<option value="" disabled selected>Seleccione ensayo...</option>';
+        selEnsayo.value = '';
         if (txtFechasConDatos) txtFechasConDatos.textContent = '';
         try {
             const res = await getFechasConDatos();
@@ -461,41 +461,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    const viewFechaEl = document.getElementById('view_fecha');
-    const viewEnsayosStatus = document.getElementById('view_ensayos_status');
-    if (viewFechaEl) {
-        viewFechaEl.addEventListener('change', async function () {
-            const selEnsayo = document.getElementById('view_ensayo_nombre');
-            if (!selEnsayo) return;
-            const fecha = this.value ? this.value.trim() : '';
-            selEnsayo.innerHTML = '<option value="" disabled selected>Seleccione ensayo...</option>';
-            if (viewEnsayosStatus) viewEnsayosStatus.textContent = '';
-            if (!fecha) return;
-            if (viewEnsayosStatus) viewEnsayosStatus.textContent = 'Cargando ensayos...';
-            try {
-                const res = await getEnsayosPorFecha(fecha);
-                if (res.ok && res.ensayos && res.ensayos.length > 0) {
-                    res.ensayos.forEach(function (e) {
-                        const opt = document.createElement('option');
-                        opt.value = e;
-                        opt.textContent = e;
-                        selEnsayo.appendChild(opt);
-                    });
-                    if (viewEnsayosStatus) viewEnsayosStatus.textContent = res.fromCache ? 'Datos en caché.' : '';
-                    if (res.fromCache) Swal.fire({ title: 'Datos guardados', text: 'Usando última data (sin conexión).', icon: 'info', timer: 2000, showConfirmButton: false });
-                } else {
-                    if (viewEnsayosStatus) viewEnsayosStatus.textContent = res.error || 'No hay ensayos para esta fecha.';
-                    if (res.error && res.error.indexOf('conexión') === -1) Swal.fire({ title: 'Aviso', text: res.error, icon: 'info' });
-                }
-            } catch (err) {
-                var msg = err.message || 'No se pudieron cargar los ensayos.';
-                if (viewEnsayosStatus) viewEnsayosStatus.textContent = msg + ' Si el sitio está en Netlify, desactiva "Prevención de seguimiento" para esta página o permite script.google.com.';
-                Swal.fire({ title: 'Error', text: msg, icon: 'error' });
-            }
-        });
-    }
-
     const btnCargarDatos = document.getElementById('btn_cargar_datos');
+    const viewEnsayosStatus = document.getElementById('view_ensayos_status');
     if (btnCargarDatos) {
         btnCargarDatos.addEventListener('click', async function () {
             const fechaEl = document.getElementById('view_fecha');
@@ -503,12 +470,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const fecha = fechaEl && fechaEl.value ? fechaEl.value.trim() : '';
             const ensayoNombre = ensayoEl && ensayoEl.value ? ensayoEl.value.trim() : '';
             if (!fecha || !ensayoNombre) {
-                Swal.fire({ title: 'Faltan datos', text: 'Elige fecha y ensayo para cargar.', icon: 'warning' });
+                Swal.fire({ title: 'Faltan datos', text: 'Elige fecha y ensayo (Ensayo 1 a 4) para cargar.', icon: 'warning' });
                 return;
             }
+            if (viewEnsayosStatus) viewEnsayosStatus.textContent = 'Cargando...';
             try {
                 const res = await getDatosPacking(fecha, ensayoNombre);
                 if (!res.ok || !res.data) {
+                    if (viewEnsayosStatus) viewEnsayosStatus.textContent = res.error || 'No hay registro para esa fecha y ensayo.';
                     Swal.fire({ title: 'Sin datos', text: res.error || 'No hay registro para esa fecha y ensayo.', icon: 'info' });
                     return;
                 }
@@ -521,8 +490,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 set('view_placa', d.PLACA_VEHICULO);
                 set('view_guia_despacho', d.GUIA_REMISION);
                 set('view_rotulo', d.ENSAYO_NUMERO);
+                if (viewEnsayosStatus) viewEnsayosStatus.textContent = '';
                 Swal.fire({ title: res.fromCache ? 'Datos cargados (caché)' : 'Datos cargados', icon: 'success', timer: 1500, showConfirmButton: false });
             } catch (err) {
+                if (viewEnsayosStatus) viewEnsayosStatus.textContent = err.message || 'Error al cargar.';
                 Swal.fire({ title: 'Error', text: err.message || 'No se pudo cargar.', icon: 'error' });
             }
         });
