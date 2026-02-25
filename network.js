@@ -68,11 +68,24 @@ export const saveLocal = (data) => {
 
 // Enviar a Google Apps Script (mode no-cors evita CORS)
 async function sendToCloud(d) {
+    const numRows = (d && d.rows) ? d.rows.length : 0;
+    console.log('[SYNC] Enviando a la nube:', numRows, 'filas. uid:', d.uid);
+    console.log('[SYNC] Resumen por fila:', (d.rows || []).map((r, i) => ({ i: i + 1, fecha: r[0], ensayo: r[10], n_clamshell: r[12], n_jarra: r[13] })));
     await fetch(API_URL, {
         method: "POST",
         mode: "no-cors",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(d)
+    });
+}
+
+/** POST Packing: envía mode 'packing'. Con no-cors no se puede leer la respuesta; el backend escribe en la primera hoja. */
+export async function postPacking(payload) {
+    await fetch(API_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "packing", ...payload })
     });
 }
 
@@ -173,13 +186,17 @@ const MSJ_SIN_CONEXION = "Sin conexión. Conéctate para cargar datos.";
 const PACKING_CACHE_KEY = "tiempos_packing_cache_v1";
 const LISTADO_REGISTRADOS_KEY = "tiempos_listado_registrados_v1";
 const LISTADO_REGISTRADOS_TTL_MS = 2 * 60 * 1000; // 2 min
+/** Máximo de entradas (fecha_ensayo) en caché GET para no llenar localStorage y mantener la app ligera. */
+const MAX_DATOS_BY_FECHA_ENSAYO = 40;
 
-function getPackingCache() {
+export function getPackingCache() {
     try {
         const raw = localStorage.getItem(PACKING_CACHE_KEY);
-        return raw ? JSON.parse(raw) : { fechas: [], ensayosByFecha: {}, lastRow: null };
+        const base = raw ? JSON.parse(raw) : { fechas: [], ensayosByFecha: {}, lastRow: null };
+        if (!base.datosByFechaEnsayo) base.datosByFechaEnsayo = {};
+        return base;
     } catch (_) {
-        return { fechas: [], ensayosByFecha: {}, lastRow: null };
+        return { fechas: [], ensayosByFecha: {}, lastRow: null, datosByFechaEnsayo: {} };
     }
 }
 
@@ -189,8 +206,23 @@ function setPackingCache(partial) {
         if (partial.fechas != null) cache.fechas = partial.fechas;
         if (partial.ensayosByFecha != null) cache.ensayosByFecha = { ...cache.ensayosByFecha, ...partial.ensayosByFecha };
         if (partial.lastRow != null) cache.lastRow = partial.lastRow;
+        if (partial.datosByFechaEnsayo != null) {
+            cache.datosByFechaEnsayo = { ...cache.datosByFechaEnsayo, ...partial.datosByFechaEnsayo };
+            var keys = Object.keys(cache.datosByFechaEnsayo);
+            if (keys.length > MAX_DATOS_BY_FECHA_ENSAYO) {
+                keys.slice(0, keys.length - MAX_DATOS_BY_FECHA_ENSAYO).forEach(function (k) { delete cache.datosByFechaEnsayo[k]; });
+            }
+        }
         localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(cache));
-    } catch (_) {}
+    } catch (e) {
+        if (e && e.name === 'QuotaExceededError') {
+            try {
+                var c = getPackingCache();
+                c.datosByFechaEnsayo = {};
+                localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(c));
+            } catch (_) {}
+        }
+    }
 }
 
 /** GET vía JSONP (evita CORS: carga con <script>, misma URL que POST). */
@@ -335,28 +367,36 @@ export async function existeRegistroFechaEnsayo(fecha, ensayoNumero) {
     }
 }
 
-/** GET: fila por fecha y ensayo_numero. Parámetros: ?fecha=...&ensayo_numero=1|2|3|4 */
+/** Clave de caché por (fecha, ensayo) para no repetir GET al cambiar de ensayo. */
+function keyFechaEnsayo(fecha, ensayoNumero) {
+    return (fecha || '') + '_' + (ensayoNumero || '');
+}
+
+/** GET: fila por fecha y ensayo_numero. Parámetros: ?fecha=...&ensayo_numero=1|2|3|4. Usa caché por (fecha, ensayo) para no hacer GET repetidos. */
 export async function getDatosPacking(fecha, ensayoNumero) {
-    console.log('[getDatosPacking] Enviando: fecha=' + fecha + ', ensayo_numero=' + ensayoNumero + ' → el servidor debe devolver { ok: true, data: { ... } }');
+    const key = keyFechaEnsayo(fecha, ensayoNumero);
+    const cache = getPackingCache();
+    if (cache.datosByFechaEnsayo && cache.datosByFechaEnsayo[key]) {
+        console.log('[getDatosPacking] Caché hit para', key);
+        return { ok: true, data: cache.datosByFechaEnsayo[key], fromCache: true };
+    }
+    console.log('[getDatosPacking] Enviando: fecha=' + fecha + ', ensayo_numero=' + ensayoNumero);
     try {
         const url = API_URL + "?fecha=" + encodeURIComponent(fecha) + "&ensayo_numero=" + encodeURIComponent(ensayoNumero);
         const out = await fetchGetJsonp(url);
         if (out.ok && out.data) {
-            console.log('[getDatosPacking] OK. Data recibida:', out.data);
-            setPackingCache({ lastRow: { fecha, ensayo_numero: ensayoNumero, data: out.data } });
+            console.log('[getDatosPacking] OK. Data recibida.');
+            setPackingCache({
+                lastRow: { fecha, ensayo_numero: ensayoNumero, data: out.data },
+                datosByFechaEnsayo: { [key]: out.data }
+            });
             return out;
-        }
-        const cache = getPackingCache();
-        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_numero === ensayoNumero) {
-            console.log('[getDatosPacking] Usando caché.');
-            return { ok: true, data: cache.lastRow.data, fromCache: true };
         }
         console.warn('[getDatosPacking] Sin datos. Error:', out.error);
         return { ok: false, data: null, error: out.error || "No hay registro." };
     } catch (e) {
-        const cache = getPackingCache();
-        if (cache.lastRow && cache.lastRow.fecha === fecha && cache.lastRow.ensayo_numero === ensayoNumero) {
-            console.log('[getDatosPacking] Falló la petición, usando caché.');
+        if (cache.lastRow && cache.lastRow.fecha === fecha && String(cache.lastRow.ensayo_numero) === String(ensayoNumero)) {
+            console.log('[getDatosPacking] Falló la petición, usando lastRow.');
             return { ok: true, data: cache.lastRow.data, fromCache: true };
         }
         console.warn('[getDatosPacking] Error:', e && e.message);

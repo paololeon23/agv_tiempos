@@ -1,22 +1,12 @@
-import { saveLocal, updateUI, getDatosPacking, getEnsayosPorFecha, existeRegistroFechaEnsayo, getListadoRegistrados, STORAGE_KEY } from './network.js';
+import { saveLocal, updateUI, getDatosPacking, getEnsayosPorFecha, existeRegistroFechaEnsayo, getListadoRegistrados, getPackingCache, postPacking, STORAGE_KEY } from './network.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 
-    // ========================================
-    // 0. FLAG PARA AVISO ANTES DE SALIR
-    // ========================================
+    // --- Inicio: aviso salir, iconos ---
     window.formHasChanges = false;
+    if (window.lucide) lucide.createIcons();
 
-    // ========================================
-    // 1. INICIALIZACIÓN DE ICONOS
-    // ========================================
-    if (window.lucide) {
-        lucide.createIcons();
-    }
-
-    // ========================================
-    // 2. CONFIGURACIÓN DE DATOS (MAPAS)
-    // ========================================
+    // --- Mapas de datos (variedades por casa) ---
     const VAR_MAP = {
         "FALL CREEK": {
             "01": "Ventura", "02": "Emerald", "03": "Biloxi", "05": "Snowchaser", 
@@ -58,9 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // ========================================
-    // 3. CARGA DINÁMICA DE SELECTS
-    // ========================================
+    // --- Select variedad (desde VAR_MAP) ---
     const selectVariedad = document.getElementById('reg_variedad');
     if (selectVariedad) {
         for (const [casa, variedades] of Object.entries(VAR_MAP)) {
@@ -77,9 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ========================================
-    // 4. INTERFAZ DE USUARIO (SIDEBAR + VISTAS)
-    // ========================================
+    // --- Sidebar y vistas (Nueva / Historial / Recomendaciones) ---
     const sidebar = document.getElementById('sidebar');
     const menuBtn = document.getElementById('menu-btn');
     const closeBtn = document.getElementById('close-btn');
@@ -108,7 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Cambio de vista (Nueva / Historial)
     function setActiveView(view) {
         const links = document.querySelectorAll('.nav-link');
         links.forEach(a => {
@@ -131,9 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // ========================================
-    // 5. VALIDACIONES DE ENTRADA
-    // ========================================
+    // --- Validaciones de entrada y fecha local ---
     const trazLibre = document.getElementById('reg_traz_libre');
     if (trazLibre) {
         trazLibre.addEventListener('input', function() {
@@ -141,7 +124,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Fecha actual en hora local (evita que toISOString muestre el día siguiente en zonas UTC-)
     function fechaLocalHoy() {
         var d = new Date();
         var y = d.getFullYear();
@@ -155,16 +137,11 @@ document.addEventListener('DOMContentLoaded', () => {
         campoFecha.value = fechaLocalHoy();
     }
 
-    // ========================================
-    // 6. MANEJO DEL FORMULARIO (SUBMIT / CAMBIOS)
-    // ========================================
+    // --- Formulario: sin submit tradicional (todo por JS) ---
     if (cosechaForm) {
-        // Nunca hacemos submit tradicional, todo va por JS
         cosechaForm.addEventListener('submit', (e) => {
             e.preventDefault();
         });
-
-        // Cualquier cambio en el formulario marca que hay datos sin guardar
         cosechaForm.addEventListener('input', () => {
             window.formHasChanges = true;
         });
@@ -173,15 +150,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // 7. HISTORIAL - RENDER
-    // ========================================
-    async function renderHistorial(shouldFetchListado) {
+    // --- Historial: paginación 8 por página y límite ~40 ítems para no sobrecargar ---
+    var historialCurrentPage = 1;
+    var HISTORIAL_PAGE_SIZE = 8;
+    var HISTORIAL_MAX_ITEMS = 40;
+
+    async function renderHistorial(shouldFetchListado, page) {
+        if (page != null && page >= 1) historialCurrentPage = page;
         const contenedor = document.getElementById('historial-list');
         const contenedorServidor = document.getElementById('historial-servidor');
         if (!contenedor) return;
 
-        // Listado en el servidor: solo al abrir Historial desde el menú (no al actualizar por storage)
         if (shouldFetchListado && contenedorServidor && typeof getListadoRegistrados === 'function') {
             try {
                 const res = await getListadoRegistrados();
@@ -204,7 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        let items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        // Limitar historial a ~40 ítems: eliminar los más antiguos para no sobrecargar
+        if (items.length > HISTORIAL_MAX_ITEMS) {
+            items = items.slice(-HISTORIAL_MAX_ITEMS);
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
+        }
         contenedor.innerHTML = '';
 
         if (items.length === 0) {
@@ -230,8 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
             itemsDeDia.forEach(item => {
                 const estado = item.status === 'subido' ? 'subido' : (item.status === 'rechazado_duplicado' ? 'rechazado_duplicado' : 'pendiente');
                 (item.rows || []).forEach(row => {
-                    const ensayoNum = row[10];
-                    const ensayoNom = row[11] || ('Ensayo ' + ensayoNum);
+                    const ensayoNum = row[12];
+                    const ensayoNom = row[13] || ('Ensayo ' + ensayoNum);
                     const clave = `${ensayoNum}|${ensayoNom}`;
                     if (!ensayosMap[clave]) {
                         ensayosMap[clave] = { ensayoNum, ensayoNom, totalClamshells: 0, estados: new Set(), rechazoMotivo: null };
@@ -260,6 +244,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        // Paginación: 8 por página
+        const totalFilas = filasTabla.length;
+        const totalPages = Math.max(1, Math.ceil(totalFilas / HISTORIAL_PAGE_SIZE));
+        historialCurrentPage = Math.min(Math.max(1, historialCurrentPage), totalPages);
+        const start = (historialCurrentPage - 1) * HISTORIAL_PAGE_SIZE;
+        const filasParaMostrar = filasTabla.slice(start, start + HISTORIAL_PAGE_SIZE);
+
         const thead = `
             <thead>
                 <tr>
@@ -271,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>
             </thead>`;
         const escapeAttr = (s) => String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const tbody = '<tbody>' + filasTabla.map(f => `
+        const tbody = '<tbody>' + filasParaMostrar.map(f => `
             <tr class="historial-row-clickable" data-detalle="${escapeAttr(f.detalleMsg)}" data-fecha="${escapeAttr(f.fecha)}" data-ensayo-num="${escapeAttr(String(f.ensayoNum))}" title="Toca para ver el detalle">
                 <td>${f.fecha}</td>
                 <td>${f.ensayo}</td>
@@ -281,14 +272,31 @@ document.addEventListener('DOMContentLoaded', () => {
             </tr>
         `).join('') + '</tbody>';
 
+        const paginationHtml = totalPages > 1 ? `
+            <div class="historial-pagination">
+                <button type="button" class="historial-pag-btn" data-page="prev" ${historialCurrentPage <= 1 ? 'disabled' : ''}>Anterior</button>
+                <span class="historial-pag-info">Página ${historialCurrentPage} de ${totalPages}</span>
+                <button type="button" class="historial-pag-btn" data-page="next" ${historialCurrentPage >= totalPages ? 'disabled' : ''}>Siguiente</button>
+            </div>` : '';
+
         const table = document.createElement('div');
         table.className = 'historial-table-wrapper';
         table.innerHTML = `
             <table class="historial-table">
                 ${thead}
                 ${tbody}
-            </table>`;
+            </table>
+            ${paginationHtml}`;
         contenedor.appendChild(table);
+
+        table.querySelectorAll('.historial-pag-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                if (this.disabled) return;
+                const p = this.getAttribute('data-page');
+                const nextPage = p === 'prev' ? historialCurrentPage - 1 : historialCurrentPage + 1;
+                if (nextPage >= 1 && nextPage <= totalPages) renderHistorial(false, nextPage);
+            });
+        });
 
         table.querySelectorAll('.historial-row-clickable').forEach(tr => {
             tr.addEventListener('click', function (e) {
@@ -345,7 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const en = normalizar(ensayoNum);
         const nuevos = [];
         for (const item of items) {
-            const rows = (item.rows || []).filter(r => normalizar(r[0]) !== fn || normalizar(r[10]) !== en);
+            const rows = (item.rows || []).filter(r => normalizar(r[0]) !== fn || normalizar(r[12]) !== en);
             if (rows.length > 0) nuevos.push({ ...item, rows });
         }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(nuevos));
@@ -361,10 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderHistorial(true);
     });
 
-    // ========================================
-    // 8. SISTEMA DE MEDICIÓN - CONFIGURACIÓN
-    // ========================================
-    
+    // --- Tipo medición (Visual/Packing), wrappers, datosEnsayos ---
     const selectMedicion = document.getElementById('tipo_medicion');
     const selectRotulo = document.getElementById('reg_rotulo_ensayo');
     
@@ -380,15 +385,16 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const viewVisualContainer = document.getElementById('view_visual_container');
     const viewPackingContainer = document.getElementById('view_packing_container');
+    const rotuloEnsayoWrapper = document.getElementById('rotulo_ensayo_wrapper');
     const btnGuardarRegistro = document.getElementById('btn-guardar-registro');
+    const btnGuardarPacking = document.getElementById('btn-guardar-packing');
 
-    // Almacenamiento de datos por ensayo y tipo
     const datosEnsayos = {
         visual: {
-            1: { visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] },
-            2: { visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] },
-            3: { visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] },
-            4: { visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] }
+            1: { formHeader: null, visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] },
+            2: { formHeader: null, visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] },
+            3: { formHeader: null, visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] },
+            4: { formHeader: null, visual: [], jarras: [], temperaturas: [], tiempos: [], humedad: [], presionambiente: [], presionfruta: [], observacion: [] }
         },
         packing: {
             1: { packing: [] },
@@ -401,9 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let tipoActual = '';
     let ensayoActual = '';
 
-    // ========================================
-    // HELPERS DE VALIDACIÓN
-    // ========================================
+    // --- Helpers validación (números, tiempos) ---
     function esNumeroPositivoEntero(val) {
         if (val === '' || val == null) return false;
         const n = Number(val);
@@ -444,9 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
-    // ========================================
-    // CAMBIO DE TIPO DE MEDICIÓN
-    // ========================================
+    // --- Cambio tipo (Visual/Packing) y cambio ensayo ---
     if (selectMedicion) {
         selectMedicion.addEventListener('change', async function() {
             const newTipo = this.value;
@@ -469,9 +471,11 @@ document.addEventListener('DOMContentLoaded', () => {
             tipoActual = newTipo;
             
             if (this.value === 'visual') {
+                if (rotuloEnsayoWrapper) rotuloEnsayoWrapper.style.display = 'block';
                 if (viewVisualContainer) viewVisualContainer.style.display = 'block';
                 if (viewPackingContainer) viewPackingContainer.style.display = 'none';
                 if (btnGuardarRegistro) btnGuardarRegistro.style.display = 'block';
+                if (btnGuardarPacking) btnGuardarPacking.style.display = 'none';
                 wrappers.visual.style.display = 'block';
                 wrappers.jarras.style.display = 'block';
                 wrappers.temperaturas.style.display = 'block';
@@ -480,10 +484,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 wrappers.presionambiente.style.display = 'block';
                 wrappers.presionfruta.style.display = 'block';
                 wrappers.observacion.style.display = 'block';
+                var selRotulo = document.getElementById('reg_rotulo_ensayo');
+                if (selRotulo) selRotulo.setAttribute('required', 'required');
             } else if (this.value === 'packing') {
+                if (rotuloEnsayoWrapper) rotuloEnsayoWrapper.style.display = 'none';
                 if (viewVisualContainer) viewVisualContainer.style.display = 'none';
                 if (viewPackingContainer) viewPackingContainer.style.display = 'block';
                 if (btnGuardarRegistro) btnGuardarRegistro.style.display = 'none';
+                if (btnGuardarPacking) btnGuardarPacking.style.display = 'block';
                 wrappers.visual.style.display = 'none';
                 wrappers.jarras.style.display = 'none';
                 wrappers.temperaturas.style.display = 'none';
@@ -491,7 +499,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 wrappers.humedad.style.display = 'none';
                 wrappers.presionambiente.style.display = 'none';
                 wrappers.presionfruta.style.display = 'none';
-                wrappers.observacion.style.display = 'none';
+                var selRotulo = document.getElementById('reg_rotulo_ensayo');
+                if (selRotulo) selRotulo.removeAttribute('required');
             }
             
             if (ensayoActual) {
@@ -500,9 +509,57 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // CAMBIO DE ENSAYO
-    // ========================================
+    function guardarFormHeaderEnEnsayo(ensayo) {
+        if (!ensayo || !datosEnsayos.visual[ensayo]) return;
+        const el = function(id) { var e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
+        datosEnsayos.visual[ensayo].formHeader = {
+            fecha: el('reg_fecha'),
+            responsable: el('reg_responsable'),
+            guia_remision: el('reg_guia_remision'),
+            variedad: el('reg_variedad'),
+            placa: el('reg_placa'),
+            hora_inicio: el('reg_hora_inicio'),
+            dias_precosecha: el('reg_dias_precosecha'),
+            traz_etapa: el('reg_traz_etapa'),
+            traz_campo: el('reg_traz_campo'),
+            traz_libre: el('reg_traz_libre'),
+            fundo: el('reg_fundo'),
+            observacion: el('reg_observacion_formato')
+        };
+    }
+    function restaurarFormHeaderDesdeEnsayo(ensayo) {
+        if (!ensayo || !datosEnsayos.visual[ensayo]) return;
+        const h = datosEnsayos.visual[ensayo].formHeader;
+        function set(id, val) { var e = document.getElementById(id); if (e) e.value = val != null ? val : ''; }
+        if (h) {
+            set('reg_fecha', h.fecha);
+            set('reg_responsable', h.responsable);
+            set('reg_guia_remision', h.guia_remision);
+            set('reg_variedad', h.variedad);
+            set('reg_placa', h.placa);
+            set('reg_hora_inicio', h.hora_inicio || '07:15');
+            set('reg_dias_precosecha', h.dias_precosecha);
+            set('reg_traz_etapa', h.traz_etapa);
+            set('reg_traz_campo', h.traz_campo);
+            set('reg_traz_libre', h.traz_libre);
+            set('reg_fundo', h.fundo);
+            set('reg_observacion_formato', h.observacion);
+        } else {
+            set('reg_fecha', '');
+            set('reg_responsable', '');
+            set('reg_guia_remision', '');
+            set('reg_variedad', '');
+            set('reg_placa', '');
+            set('reg_hora_inicio', '07:15');
+            set('reg_dias_precosecha', '');
+            set('reg_traz_etapa', '');
+            set('reg_traz_campo', '');
+            set('reg_traz_libre', '');
+            set('reg_fundo', '');
+            set('reg_observacion_formato', '');
+        }
+    }
+
     if (selectRotulo) {
         selectRotulo.addEventListener('change', async function() {
             const newEnsayo = this.value;
@@ -522,17 +579,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
             }
+            if (ensayoActual) guardarFormHeaderEnEnsayo(ensayoActual);
             ensayoActual = newEnsayo;
-            
+            restaurarFormHeaderDesdeEnsayo(ensayoActual);
             if (tipoActual) {
                 restaurarDatosEnsayo(tipoActual, ensayoActual);
             }
         });
     }
 
-    // ========================================
-    // PACKING: fechas y ensayos con datos (solo opciones que tienen data)
-    // ========================================
+    // --- PACKING: helpers fecha/variedad, select ensayo, cargar datos, sync vista ---
     function formatearFechaParaVer(yyyyMmDd) {
         if (!yyyyMmDd || typeof yyyyMmDd !== 'string') return yyyyMmDd || '';
         var parts = yyyyMmDd.trim().split('-');
@@ -540,7 +596,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return parts[2] + '/' + parts[1] + '/' + parts[0];
     }
 
-    /** Normaliza valor para asignar a un select: número sin decimal, string trim. */
     function valorParaSelect(val) {
         if (val === null || val === undefined || val === '') return '';
         var s = String(val).trim();
@@ -550,7 +605,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return s;
     }
 
-    /** Devuelve el nombre de variedad desde VAR_MAP por id (número o string). */
     function getNombreVariedad(id) {
         if (id === null || id === undefined || id === '') return '';
         var key = String(id).trim();
@@ -560,7 +614,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return key;
     }
 
-    // Ensayo select dinámico: al cambiar la fecha, cargar ensayos con datos para esa fecha.
     const inputFechaPacking = document.getElementById('view_fecha');
     const selEnsayoPacking = document.getElementById('view_ensayo_numero');
     var spinnerEnsayos = document.getElementById('spinner_ensayos');
@@ -568,8 +621,27 @@ document.addEventListener('DOMContentLoaded', () => {
     var sectionDatos = document.getElementById('packing_datos_section');
     var msgNoEnsayos = document.getElementById('view_no_ensayos_msg');
     if (inputFechaPacking && selEnsayoPacking) {
+        selEnsayoPacking.addEventListener('change', async function () {
+            const fecha = (inputFechaPacking.value || '').trim();
+            const newEnsayo = (selEnsayoPacking.value || '').trim();
+            if (currentFechaPacking && currentEnsayoPacking) guardarPackingEnStore(currentFechaPacking, currentEnsayoPacking);
+            currentFechaPacking = fecha;
+            currentEnsayoPacking = newEnsayo;
+            if (fecha && newEnsayo) {
+                restaurarPackingDesdeStore(fecha, newEnsayo);
+                try {
+                    var res = await getDatosPacking(fecha, newEnsayo);
+                    if (res.ok && res.data) aplicarDatosVistaPacking(res.data);
+                } catch (_) {}
+            }
+            if (newEnsayo && datosEnsayos && datosEnsayos.visual && datosEnsayos.visual[newEnsayo] && Array.isArray(datosEnsayos.visual[newEnsayo].visual) && datosEnsayos.visual[newEnsayo].visual.length > 0) {
+                maxFilasPacking = datosEnsayos.visual[newEnsayo].visual.length;
+            }
+        });
         inputFechaPacking.addEventListener('change', async function () {
             var fecha = (inputFechaPacking.value || '').trim();
+            currentFechaPacking = fecha;
+            currentEnsayoPacking = '';
             selEnsayoPacking.innerHTML = '<option value="" disabled selected>Seleccione ensayo...</option>';
             selEnsayoPacking.value = '';
             if (msgNoEnsayos) msgNoEnsayos.style.display = 'none';
@@ -616,6 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 Swal.fire({ title: 'Faltan datos', text: 'Elige fecha y ensayo para cargar.', icon: 'warning' });
                 return;
             }
+            if (currentFechaPacking && currentEnsayoPacking) guardarPackingEnStore(currentFechaPacking, currentEnsayoPacking);
             if (spinnerCargar) spinnerCargar.style.display = 'inline-block';
             if (btnCargarText) btnCargarText.textContent = 'Cargando...';
             btnCargarDatos.disabled = true;
@@ -628,41 +701,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 const d = res.data;
-                const set = function (id, val) {
-                    const el = document.getElementById(id);
-                    if (!el) return;
-                    el.value = (val != null && val !== '') ? String(val).trim() : '';
-                };
-                            const setSelect = function (id, val) {
-                    const el = document.getElementById(id);
-                    if (!el) return;
-                    const v = valorParaSelect(val);
-                    if (v && !Array.from(el.options).some(function (o) { return o.value === v; })) {
-                        var opt = document.createElement('option');
-                        opt.value = v;
-                        opt.textContent = v;
-                        el.appendChild(opt);
-                    }
-                    el.value = v;
-                };
-                setSelect('view_etapa', d.TRAZ_ETAPA);
-                setSelect('view_campo', d.TRAZ_CAMPO);
-                var elEtapa = document.getElementById('view_etapa');
-                var elCampo = document.getElementById('view_campo');
-                if (elEtapa) { elEtapa.setAttribute('data-last-value', valorParaSelect(d.TRAZ_ETAPA)); }
-                if (elCampo) { elCampo.setAttribute('data-last-value', valorParaSelect(d.TRAZ_CAMPO)); }
-                set('view_turno', d.TRAZ_LIBRE);
-                set('view_placa', d.PLACA_VEHICULO);
-                set('view_guia_despacho', d.GUIA_REMISION);
-                var nEnsayo = d.ENSAYO_NUMERO != null && d.ENSAYO_NUMERO !== '' ? String(d.ENSAYO_NUMERO).trim() : '';
-                set('view_rotulo', nEnsayo ? nEnsayo + ' (Ensayo-' + nEnsayo + ')' : '');
-                // Variedad: número → nombre en view y auto-selección en reg_variedad
-                const variedadId = (d.VARIEDAD != null && d.VARIEDAD !== '') ? String(d.VARIEDAD).trim() : '';
-                const variedadNombre = getNombreVariedad(d.VARIEDAD);
-                const viewVar = document.getElementById('view_variedad');
-                const regVar = document.getElementById('reg_variedad');
-                if (viewVar) viewVar.value = variedadNombre;
-                if (regVar) regVar.value = variedadId;
+                aplicarDatosVistaPacking(d);
+                currentFechaPacking = fecha;
+                currentEnsayoPacking = ensayoNumero;
+                restaurarPackingDesdeStore(fecha, ensayoNumero);
                 Swal.fire({ title: res.fromCache ? 'Datos cargados (caché)' : 'Datos cargados', icon: 'success', timer: 1500, showConfirmButton: false });
             } catch (err) {
                 Swal.fire({ title: 'Error', text: err.message || 'No se pudo cargar.', icon: 'error' });
@@ -676,7 +718,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Etapa/Campo solo lectura: revertir si el usuario intenta cambiar
     (function () {
         var vEtapa = document.getElementById('view_etapa');
         var vCampo = document.getElementById('view_campo');
@@ -684,24 +725,676 @@ document.addEventListener('DOMContentLoaded', () => {
         if (vCampo) vCampo.addEventListener('change', function () { var v = this.getAttribute('data-last-value'); if (v !== null && v !== '') this.value = v; });
     })();
 
-    // Sincronizar vista al cargar (visual por defecto si no es packing)
     (function syncVistaInicial() {
         const v = selectMedicion ? selectMedicion.value : '';
         if (v === 'packing') {
             if (viewVisualContainer) viewVisualContainer.style.display = 'none';
             if (viewPackingContainer) viewPackingContainer.style.display = 'block';
             if (btnGuardarRegistro) btnGuardarRegistro.style.display = 'none';
+            if (btnGuardarPacking) btnGuardarPacking.style.display = 'block';
             if (inputFechaPacking && inputFechaPacking.value) inputFechaPacking.dispatchEvent(new Event('change'));
         } else {
             if (viewVisualContainer) viewVisualContainer.style.display = 'block';
             if (viewPackingContainer) viewPackingContainer.style.display = 'none';
             if (btnGuardarRegistro) btnGuardarRegistro.style.display = 'block';
+            if (btnGuardarPacking) btnGuardarPacking.style.display = 'none';
         }
     })();
 
-    // ========================================
-    // RESTAURAR DATOS DEL ENSAYO
-    // ========================================
+    // --- PACKING: datos por fila (referencia = packing2.length), agregar/editar/eliminar/replicar, envío console ---
+    const datosPacking = {
+        packing1: [],
+        packing2: [],
+        packing3: [],
+        packing4: [],
+        packing5: [],
+        packing6: [],
+        packing7: [],
+        packing8: []
+    };
+
+    /** Packing por (fecha, ensayo): al cambiar de ensayo se guarda y se restaura, como en Calibrado Visual. Límite para mantener la app ligera. */
+    const datosPackingPorEnsayo = {};
+    var datosPackingPorEnsayoKeysOrder = [];
+    var MAX_PACKING_STORE_KEYS = 20;
+    let currentFechaPacking = '';
+    let currentEnsayoPacking = '';
+
+    function keyPacking(fecha, ensayo) {
+        return (fecha || '') + '_' + (ensayo || '');
+    }
+
+    function guardarPackingEnStore(fecha, ensayo) {
+        if (!fecha || !ensayo) return;
+        var h = document.getElementById('view_hora_recepcion');
+        var n = document.getElementById('view_n_viaje');
+        const key = keyPacking(fecha, ensayo);
+        datosPackingPorEnsayo[key] = {
+            maxFilasPacking: maxFilasPacking,
+            hora_recepcion: h ? (h.value || '').trim() : '',
+            n_viaje: n ? (n.value || '').trim() : '',
+            packing1: datosPacking.packing1.map(function (x) { return { ...x }; }),
+            packing2: datosPacking.packing2.map(function (x) { return { ...x }; }),
+            packing3: datosPacking.packing3.map(function (x) { return { ...x }; }),
+            packing4: datosPacking.packing4.map(function (x) { return { ...x }; }),
+            packing5: datosPacking.packing5.map(function (x) { return { ...x }; }),
+            packing6: datosPacking.packing6.map(function (x) { return { ...x }; }),
+            packing7: datosPacking.packing7.map(function (x) { return { ...x }; }),
+            packing8: datosPacking.packing8.map(function (x) { return { ...x }; })
+        };
+        if (datosPackingPorEnsayoKeysOrder.indexOf(key) === -1) datosPackingPorEnsayoKeysOrder.push(key);
+        while (datosPackingPorEnsayoKeysOrder.length > MAX_PACKING_STORE_KEYS) {
+            var oldKey = datosPackingPorEnsayoKeysOrder.shift();
+            delete datosPackingPorEnsayo[oldKey];
+        }
+    }
+
+    function restaurarPackingDesdeStore(fecha, ensayo) {
+        const key = keyPacking(fecha, ensayo);
+        const stored = datosPackingPorEnsayo[key];
+        var setView = function (id, val) {
+            var el = document.getElementById(id);
+            if (el) el.value = (val != null && val !== '') ? String(val).trim() : '';
+        };
+        if (!stored) {
+            setView('view_hora_recepcion', '');
+            setView('view_n_viaje', '');
+            ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(function (k) { datosPacking[k] = []; });
+            renderAllPackingRows();
+            actualizarTodosContadoresPacking();
+            return;
+        }
+        setView('view_hora_recepcion', stored.hora_recepcion);
+        setView('view_n_viaje', stored.n_viaje);
+        if (stored.maxFilasPacking != null && stored.maxFilasPacking > 0) maxFilasPacking = stored.maxFilasPacking;
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(function (k) {
+            datosPacking[k] = (stored[k] || []).map(function (x) { return { ...x }; });
+        });
+        renderAllPackingRows();
+        actualizarTodosContadoresPacking();
+    }
+
+    /** Rellena los campos de vista (solo lectura) y maxFilasPacking desde la respuesta del GET. */
+    function aplicarDatosVistaPacking(d) {
+        if (!d) return;
+        if (d.numFilas != null && d.numFilas > 0) maxFilasPacking = d.numFilas;
+        const set = function (id, val) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.value = (val != null && val !== '') ? String(val).trim() : '';
+        };
+        const setSelect = function (id, val) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var v = valorParaSelect(val);
+            if (v && !Array.from(el.options).some(function (o) { return o.value === v; })) {
+                var opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                el.appendChild(opt);
+            }
+            el.value = v;
+        };
+        setSelect('view_etapa', d.TRAZ_ETAPA);
+        setSelect('view_campo', d.TRAZ_CAMPO);
+        var elEtapa = document.getElementById('view_etapa');
+        var elCampo = document.getElementById('view_campo');
+        if (elEtapa) elEtapa.setAttribute('data-last-value', valorParaSelect(d.TRAZ_ETAPA));
+        if (elCampo) elCampo.setAttribute('data-last-value', valorParaSelect(d.TRAZ_CAMPO));
+        set('view_turno', d.TRAZ_LIBRE);
+        set('view_placa', d.PLACA_VEHICULO);
+        set('view_guia_despacho', d.GUIA_REMISION);
+        var nEnsayo = d.ENSAYO_NUMERO != null && d.ENSAYO_NUMERO !== '' ? String(d.ENSAYO_NUMERO).trim() : '';
+        set('view_rotulo', nEnsayo ? nEnsayo + ' (Ensayo-' + nEnsayo + ')' : '');
+        var variedadId = (d.VARIEDAD != null && d.VARIEDAD !== '') ? String(d.VARIEDAD).trim() : '';
+        var variedadNombre = getNombreVariedad(d.VARIEDAD);
+        var viewVar = document.getElementById('view_variedad');
+        var regVar = document.getElementById('reg_variedad');
+        if (viewVar) viewVar.value = variedadNombre;
+        if (regVar) regVar.value = variedadId;
+    }
+
+    /** Límite máximo de filas de packing (por ensayo). Se actualiza al cargar datos o al elegir ensayo con datos Visual. */
+    let maxFilasPacking = 8;
+
+    function getPackingRowCount() {
+        const len = Math.max(
+            datosPacking.packing1.length,
+            datosPacking.packing2.length,
+            datosPacking.packing3.length,
+            datosPacking.packing4.length,
+            datosPacking.packing5.length,
+            datosPacking.packing6.length,
+            datosPacking.packing7.length,
+            datosPacking.packing8.length
+        );
+        return len;
+    }
+
+    const emptiesPacking = {
+        packing1: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
+        packing2: { peso_recepcion: '', peso_ingreso_gasificado: '', peso_salida_gasificado: '', peso_ingreso_prefrio: '', peso_salida_prefrio: '' },
+        packing3: { t_amb_recep: '', t_pulp_recep: '', t_amb_ing: '', t_pulp_ing: '', t_amb_sal: '', t_pulp_sal: '', t_amb_pre_in: '', t_pulp_pre_in: '', t_amb_pre_out: '', t_pulp_pre_out: '' },
+        packing4: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
+        packing5: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
+        packing6: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
+        packing7: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
+        packing8: { observacion: '' }
+    };
+
+    /** Comprueba si en ESA sección se puede agregar otra fila. Solo bloquea en la sección que llegó al límite; los demás wrappers siguen pudiendo agregar desde 1. */
+    function canAgregarFilaPacking(sectionKey) {
+        const arr = datosPacking[sectionKey];
+        if (!arr) return true;
+        if (arr.length >= maxFilasPacking) {
+            Swal.fire({
+                title: 'Límite de filas',
+                html: 'En esta sección no se pueden agregar más de <strong>' + maxFilasPacking + '</strong> filas para este ensayo.',
+                icon: 'warning',
+                confirmButtonColor: '#2f7cc0'
+            });
+            return false;
+        }
+        return true;
+    }
+
+    // Solo rellena hasta n copiando la última fila; nunca crea filas vacías. Si una sección tiene 0 filas, no se agrega nada.
+    function sincronizarFilasPacking() {
+        const n = getPackingRowCount();
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(k => {
+            const arr = datosPacking[k];
+            while (arr.length < n) {
+                if (arr.length > 0) arr.push({ ...arr[arr.length - 1] });
+                else break;
+            }
+        });
+        renderAllPackingRows();
+        actualizarTodosContadoresPacking();
+    }
+
+    /** Actualiza cada contador con la cantidad de filas de SU sección (cada wrapper independiente: vacío = siguiente 1). */
+    function actualizarTodosContadoresPacking() {
+        actualizarContadorPacking('next_clam_packing', datosPacking.packing1.length);
+        actualizarContadorPacking('next_clam_pesos', datosPacking.packing2.length);
+        actualizarContadorPacking('next_clam_packing_temp', datosPacking.packing3.length);
+        actualizarContadorPacking('next_clam_packing_humedad', datosPacking.packing4.length);
+        actualizarContadorPacking('next_clam_packing_presion', datosPacking.packing5.length);
+        actualizarContadorPacking('next_clam_packing_presion_fruta', datosPacking.packing6.length);
+        actualizarContadorPacking('next_clam_deficit', datosPacking.packing7.length);
+        actualizarContadorPacking('next_clam_packing_obs', datosPacking.packing8.length);
+    }
+
+    function actualizarContadorPacking(contadorId, valor) {
+        const el = document.getElementById(contadorId);
+        if (el) el.textContent = valor + 1;
+    }
+
+    // Orden de columnas packing por fila lógica (41 valores): p1(5), p2(5), p3(10), p4(5), p5(5), p6(5), p7(5), p8(1). Fila 1 va primero, luego fila 2, etc.
+    function buildPackingRows() {
+        const n = getPackingRowCount();
+        const rows = [];
+        for (let i = 0; i < n; i++) {
+            const p1 = datosPacking.packing1[i] || {};
+            const p2 = datosPacking.packing2[i] || {};
+            const p3 = datosPacking.packing3[i] || {};
+            const p4 = datosPacking.packing4[i] || {};
+            const p5 = datosPacking.packing5[i] || {};
+            const p6 = datosPacking.packing6[i] || {};
+            const p7 = datosPacking.packing7[i] || {};
+            const p8 = datosPacking.packing8[i] || {};
+            const v = (x) => (x != null && x !== '') ? x : '';
+            rows.push([
+                v(p1.recepcion), v(p1.ingreso_gasificado), v(p1.salida_gasificado), v(p1.ingreso_prefrio), v(p1.salida_prefrio),
+                v(p2.peso_recepcion), v(p2.peso_ingreso_gasificado), v(p2.peso_salida_gasificado), v(p2.peso_ingreso_prefrio), v(p2.peso_salida_prefrio),
+                v(p3.t_amb_recep), v(p3.t_pulp_recep), v(p3.t_amb_ing), v(p3.t_pulp_ing), v(p3.t_amb_sal), v(p3.t_pulp_sal), v(p3.t_amb_pre_in), v(p3.t_pulp_pre_in), v(p3.t_amb_pre_out), v(p3.t_pulp_pre_out),
+                v(p4.recepcion), v(p4.ingreso_gasificado), v(p4.salida_gasificado), v(p4.ingreso_prefrio), v(p4.salida_prefrio),
+                v(p5.recepcion), v(p5.ingreso_gasificado), v(p5.salida_gasificado), v(p5.ingreso_prefrio), v(p5.salida_prefrio),
+                v(p6.recepcion), v(p6.ingreso_gasificado), v(p6.salida_gasificado), v(p6.ingreso_prefrio), v(p6.salida_prefrio),
+                v(p7.recepcion), v(p7.ingreso_gasificado), v(p7.salida_gasificado), v(p7.ingreso_prefrio), v(p7.salida_prefrio),
+                v(p8.observacion)
+            ]);
+        }
+        return rows;
+    }
+
+    function getPackingRowCountFromStored(stored) {
+        if (!stored) return 0;
+        var len = 0;
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(function (k) {
+            var arr = stored[k];
+            if (arr && arr.length > len) len = arr.length;
+        });
+        return len;
+    }
+
+    function buildPackingRowsFromStored(stored) {
+        var n = getPackingRowCountFromStored(stored);
+        var rows = [];
+        var v = function (x) { return (x != null && x !== '') ? x : ''; };
+        for (var i = 0; i < n; i++) {
+            var p1 = (stored.packing1 && stored.packing1[i]) || {};
+            var p2 = (stored.packing2 && stored.packing2[i]) || {};
+            var p3 = (stored.packing3 && stored.packing3[i]) || {};
+            var p4 = (stored.packing4 && stored.packing4[i]) || {};
+            var p5 = (stored.packing5 && stored.packing5[i]) || {};
+            var p6 = (stored.packing6 && stored.packing6[i]) || {};
+            var p7 = (stored.packing7 && stored.packing7[i]) || {};
+            var p8 = (stored.packing8 && stored.packing8[i]) || {};
+            rows.push([
+                v(p1.recepcion), v(p1.ingreso_gasificado), v(p1.salida_gasificado), v(p1.ingreso_prefrio), v(p1.salida_prefrio),
+                v(p2.peso_recepcion), v(p2.peso_ingreso_gasificado), v(p2.peso_salida_gasificado), v(p2.peso_ingreso_prefrio), v(p2.peso_salida_prefrio),
+                v(p3.t_amb_recep), v(p3.t_pulp_recep), v(p3.t_amb_ing), v(p3.t_pulp_ing), v(p3.t_amb_sal), v(p3.t_pulp_sal), v(p3.t_amb_pre_in), v(p3.t_pulp_pre_in), v(p3.t_amb_pre_out), v(p3.t_pulp_pre_out),
+                v(p4.recepcion), v(p4.ingreso_gasificado), v(p4.salida_gasificado), v(p4.ingreso_prefrio), v(p4.salida_prefrio),
+                v(p5.recepcion), v(p5.ingreso_gasificado), v(p5.salida_gasificado), v(p5.ingreso_prefrio), v(p5.salida_prefrio),
+                v(p6.recepcion), v(p6.ingreso_gasificado), v(p6.salida_gasificado), v(p6.ingreso_prefrio), v(p6.salida_prefrio),
+                v(p7.recepcion), v(p7.ingreso_gasificado), v(p7.salida_gasificado), v(p7.ingreso_prefrio), v(p7.salida_prefrio),
+                v(p8.observacion)
+            ]);
+        }
+        return rows;
+    }
+
+    // Limpia el formulario packing después de subida exitosa (como el primer POST). Sin internet el fetch falla y no se limpia.
+    function limpiarFormularioPacking() {
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(k => { datosPacking[k] = []; });
+        renderAllPackingRows();
+        var h = document.getElementById('view_hora_recepcion');
+        var n = document.getElementById('view_n_viaje');
+        if (h) h.value = '';
+        if (n) n.value = '';
+        var idsReg = ['reg_packing_recepcion','reg_packing_ingreso_gasificado','reg_packing_salida_gasificado','reg_packing_ingreso_prefrio','reg_packing_salida_prefrio','reg_packing_peso_recepcion','reg_packing_peso_ingreso_gasificado','reg_packing_peso_salida_gasificado','reg_packing_peso_ingreso_prefrio','reg_packing_peso_salida_prefrio','reg_packing_temp_amb_recepcion','reg_packing_temp_pulp_recepcion','reg_packing_temp_amb_ingreso_gas','reg_packing_temp_pulp_ingreso_gas','reg_packing_temp_amb_salida_gas','reg_packing_temp_pulp_salida_gas','reg_packing_temp_amb_ingreso_pre','reg_packing_temp_pulp_ingreso_pre','reg_packing_temp_amb_salida_pre','reg_packing_temp_pulp_salida_pre','reg_packing_humedad_recepcion','reg_packing_humedad_ingreso_gasificado','reg_packing_humedad_salida_gasificado','reg_packing_humedad_ingreso_prefrio','reg_packing_humedad_salida_prefrio','reg_packing_presion_recepcion','reg_packing_presion_ingreso_gasificado','reg_packing_presion_salida_gasificado','reg_packing_presion_ingreso_prefrio','reg_packing_presion_salida_prefrio','reg_packing_presion_fruta_recepcion','reg_packing_presion_fruta_ingreso_gasificado','reg_packing_presion_fruta_salida_gasificado','reg_packing_presion_fruta_ingreso_prefrio','reg_packing_presion_fruta_salida_prefrio','reg_packing_deficit_recepcion','reg_packing_deficit_ingreso_gasificado','reg_packing_deficit_salida_gasificado','reg_packing_deficit_ingreso_prefrio','reg_packing_deficit_salida_prefrio','reg_packing_obs_texto'];
+        idsReg.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+    }
+
+    /** Limpia toda la sección Packing: formulario + campos de vista (tras envío exitoso). */
+    function limpiarTodoPacking() {
+        limpiarFormularioPacking();
+        var viewIds = ['view_rotulo', 'view_etapa', 'view_campo', 'view_turno', 'view_placa', 'view_guia_despacho', 'view_variedad', 'view_hora_recepcion', 'view_n_viaje'];
+        viewIds.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        var regVar = document.getElementById('reg_variedad');
+        if (regVar) regVar.value = '';
+    }
+
+    if (btnGuardarPacking) {
+        btnGuardarPacking.addEventListener('click', async () => {
+            var fechaEl = document.getElementById('view_fecha');
+            var ensayoEl = document.getElementById('view_ensayo_numero');
+            var fecha = (fechaEl && fechaEl.value) ? fechaEl.value.trim() : (currentFechaPacking || '');
+            var ensayoView = (ensayoEl && ensayoEl.value) ? String(ensayoEl.value).trim() : (currentEnsayoPacking || '');
+            if (fecha && ensayoView) {
+                currentFechaPacking = fecha;
+                currentEnsayoPacking = ensayoView;
+                guardarPackingEnStore(fecha, ensayoView);
+            } else if (currentFechaPacking && currentEnsayoPacking) {
+                guardarPackingEnStore(currentFechaPacking, currentEnsayoPacking);
+            }
+            if (!fecha) {
+                Swal.fire({ title: 'Falta fecha', text: 'Elige una fecha para enviar packing.', icon: 'warning' });
+                return;
+            }
+            var ensayosAEnviar = [1, 2, 3, 4].filter(function (e) {
+                var key = keyPacking(fecha, e);
+                var stored = datosPackingPorEnsayo[key];
+                return stored && getPackingRowCountFromStored(stored) > 0;
+            });
+            if (ensayosAEnviar.length === 0) {
+                Swal.fire({ title: 'Sin datos', text: 'No hay datos de packing para enviar. Elige fecha y ensayo, agrega al menos una fila (botón +) y vuelve a Enviar.', icon: 'info' });
+                return;
+            }
+            var totalFilas = 0;
+            for (var t = 0; t < ensayosAEnviar.length; t++) {
+                var k = keyPacking(fecha, String(ensayosAEnviar[t]));
+                var st = datosPackingPorEnsayo[k];
+                if (st) totalFilas += getPackingRowCountFromStored(st);
+            }
+            var result = await Swal.fire({
+                title: '¿Enviar packing?',
+                html: 'Se enviará:<br><strong>Ensayo ' + ensayosAEnviar.join(', Ensayo ') + '</strong><br>Total: <strong>' + totalFilas + '</strong> fila(s).<br><br>¿Continuar?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Enviar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#2f7cc0',
+                cancelButtonColor: '#6c757d'
+            });
+            if (!result.isConfirmed) return;
+
+            btnGuardarPacking.disabled = true;
+            var cache = getPackingCache();
+            var enviados = 0;
+            try {
+                for (var i = 0; i < ensayosAEnviar.length; i++) {
+                    var ensayoNumero = String(ensayosAEnviar[i]);
+                    var keyFeEn = keyPacking(fecha, ensayoNumero);
+                    var dataCached = (cache.datosByFechaEnsayo && cache.datosByFechaEnsayo[keyFeEn]) || (cache.lastRow && cache.lastRow.fecha === fecha && String(cache.lastRow.ensayo_numero) === ensayoNumero && cache.lastRow.data ? cache.lastRow.data : null);
+                    var fila = dataCached && dataCached.fila != null ? dataCached.fila : undefined;
+                    var stored = datosPackingPorEnsayo[keyFeEn];
+                    var packingRows = buildPackingRowsFromStored(stored);
+                    if (packingRows.length === 0) continue;
+                    var horaRecepcion = (stored.hora_recepcion != null && stored.hora_recepcion !== '') ? String(stored.hora_recepcion).trim() : '';
+                    var nViaje = (stored.n_viaje != null && stored.n_viaje !== '') ? String(stored.n_viaje).trim() : '';
+                    await postPacking({ fecha: fecha, ensayo_numero: ensayoNumero, fila: fila, hora_recepcion: horaRecepcion, n_viaje: nViaje, packingRows: packingRows });
+                    enviados++;
+                    delete datosPackingPorEnsayo[keyFeEn];
+                    var idx = datosPackingPorEnsayoKeysOrder.indexOf(keyFeEn);
+                    if (idx !== -1) datosPackingPorEnsayoKeysOrder.splice(idx, 1);
+                }
+                if (enviados > 0) {
+                    limpiarTodoPacking();
+                    await Swal.fire({
+                        title: 'Packing enviado',
+                        html: 'Se enviaron <strong>' + enviados + '</strong> ensayo(s): Ensayo ' + ensayosAEnviar.join(', Ensayo ') + '.<br><br>Se limpió el formulario.',
+                        icon: 'success',
+                        confirmButtonColor: '#2f7cc0'
+                    });
+                }
+            } catch (e) {
+                Swal.fire({ title: 'Error', text: (e && e.message) || 'No se pudo enviar el packing.', icon: 'error', confirmButtonColor: '#d33' });
+            } finally {
+                btnGuardarPacking.disabled = false;
+            }
+        });
+    }
+
+    function eliminarFilaPacking(index) {
+        ['packing1','packing2','packing3','packing4','packing5','packing6','packing7','packing8'].forEach(k => {
+            datosPacking[k].splice(index, 1);
+        });
+        renderAllPackingRows();
+        actualizarTodosContadoresPacking();
+    }
+
+    // Replicar: igualar cantidad de filas a Pesos copiando la última fila. Nunca crea filas vacías: si una sección tiene 0 filas, no se agrega nada ahí (la decisión es del usuario).
+    function replicarHastaPacking2() {
+        const ref = datosPacking.packing2.length;
+        ['packing1','packing3','packing4','packing5','packing6','packing7','packing8'].forEach(k => {
+            const arr = datosPacking[k];
+            while (arr.length < ref) {
+                if (arr.length > 0) arr.push({ ...arr[arr.length - 1] });
+                else break;
+            }
+        });
+        renderAllPackingRows();
+        actualizarTodosContadoresPacking();
+    }
+
+    function agregarFilaPacking1(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion || '-'}</td><td>${data.ingreso_gasificado || '-'}</td><td>${data.salida_gasificado || '-'}</td><td>${data.ingreso_prefrio || '-'}</td><td>${data.salida_prefrio || '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking1(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2(); });
+    }
+
+    function agregarFilaPacking2(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${data.peso_recepcion ?? '-'}</td><td>${data.peso_ingreso_gasificado ?? '-'}</td><td>${data.peso_salida_gasificado ?? '-'}</td><td>${data.peso_ingreso_prefrio ?? '-'}</td><td>${data.peso_salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking2(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+    }
+
+    function agregarFilaPacking3(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${data.t_amb_recep ?? '-'}</td><td>${data.t_pulp_recep ?? '-'}</td><td>${data.t_amb_ing ?? '-'}</td><td>${data.t_pulp_ing ?? '-'}</td><td>${data.t_amb_sal ?? '-'}</td><td>${data.t_pulp_sal ?? '-'}</td><td>${data.t_amb_pre_in ?? '-'}</td><td>${data.t_pulp_pre_in ?? '-'}</td><td>${data.t_amb_pre_out ?? '-'}</td><td>${data.t_pulp_pre_out ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking3(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2(); });
+    }
+
+    function agregarFilaPacking4(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking4(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2(); });
+    }
+
+    function agregarFilaPacking5(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking5(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2(); });
+    }
+
+    function agregarFilaPacking6(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking6(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2(); });
+    }
+
+    function agregarFilaPacking7(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking7(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2(); });
+    }
+
+    function agregarFilaPacking8(data, tbody, num) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-packing-index', num - 1);
+        row.innerHTML = `<td class="b-left">${num}</td><td>${(data.observacion || '').trim() || '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        tbody.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking8(num - 1, data));
+        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking(num - 1));
+        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2(); });
+    }
+
+    function renderAllPackingRows() {
+        const t1 = document.getElementById('tbody-packing-1');
+        const t2 = document.getElementById('tbody-packing-pesos');
+        const t3 = document.getElementById('tbody-packing-temp');
+        const t4 = document.getElementById('tbody-packing-humedad');
+        const t5 = document.getElementById('tbody-packing-presion');
+        const t6 = document.getElementById('tbody-packing-presion-fruta');
+        const t7 = document.getElementById('tbody-packing-deficit');
+        const t8 = document.getElementById('tbody-packing-obs');
+        if (t1) { t1.innerHTML = ''; datosPacking.packing1.forEach((d, i) => agregarFilaPacking1(d, t1, i + 1)); }
+        if (t2) { t2.innerHTML = ''; datosPacking.packing2.forEach((d, i) => agregarFilaPacking2(d, t2, i + 1)); }
+        if (t3) { t3.innerHTML = ''; datosPacking.packing3.forEach((d, i) => agregarFilaPacking3(d, t3, i + 1)); }
+        if (t4) { t4.innerHTML = ''; datosPacking.packing4.forEach((d, i) => agregarFilaPacking4(d, t4, i + 1)); }
+        if (t5) { t5.innerHTML = ''; datosPacking.packing5.forEach((d, i) => agregarFilaPacking5(d, t5, i + 1)); }
+        if (t6) { t6.innerHTML = ''; datosPacking.packing6.forEach((d, i) => agregarFilaPacking6(d, t6, i + 1)); }
+        if (t7) { t7.innerHTML = ''; datosPacking.packing7.forEach((d, i) => agregarFilaPacking7(d, t7, i + 1)); }
+        if (t8) { t8.innerHTML = ''; datosPacking.packing8.forEach((d, i) => agregarFilaPacking8(d, t8, i + 1)); }
+        actualizarTodosContadoresPacking();
+    }
+
+    const modalGrid = (labels, inputsHtml) => `<div class="packing-modal-grid">${labels.map((l, i) => `<div class="packing-modal-field"><label>${l}</label>${inputsHtml[i]}</div>`).join('')}</div>`;
+    function editarFilaPacking1(index, dataActual) {
+        const labels = ['Recep.', 'In Gas.', 'Out Gas.', 'In Pre.', 'Out Pre.'];
+        const ids = ['e_recep','e_ing','e_sal','e_pre_in','e_pre_out'];
+        const vals = [dataActual.recepcion, dataActual.ingreso_gasificado, dataActual.salida_gasificado, dataActual.ingreso_prefrio, dataActual.salida_prefrio];
+        const inputs = ids.map((id, i) => `<input type="time" id="${id}" class="swal2-input" value="${vals[i] || ''}">`);
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Tiempos — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, html: modalGrid(labels, inputs), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', preConfirm: () => ({ recepcion: document.getElementById('e_recep').value, ingreso_gasificado: document.getElementById('e_ing').value, salida_gasificado: document.getElementById('e_sal').value, ingreso_prefrio: document.getElementById('e_pre_in').value, salida_prefrio: document.getElementById('e_pre_out').value }) }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing1[index] = r.value; renderAllPackingRows(); } });
+    }
+    function editarFilaPacking2(index, dataActual) {
+        const labels = ['Recep. (gr)', 'In Gas. (gr)', 'Out Gas. (gr)', 'In Pre. (gr)', 'Out Pre. (gr)'];
+        const ids = ['e_p1','e_p2','e_p3','e_p4','e_p5'];
+        const vals = [dataActual.peso_recepcion, dataActual.peso_ingreso_gasificado, dataActual.peso_salida_gasificado, dataActual.peso_ingreso_prefrio, dataActual.peso_salida_prefrio];
+        const inputs = ids.map((id, i) => `<input type="number" step="0.1" id="${id}" class="swal2-input" value="${vals[i] ?? ''}">`);
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Pesos — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, html: modalGrid(labels, inputs), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', preConfirm: () => ({ peso_recepcion: document.getElementById('e_p1').value, peso_ingreso_gasificado: document.getElementById('e_p2').value, peso_salida_gasificado: document.getElementById('e_p3').value, peso_ingreso_prefrio: document.getElementById('e_p4').value, peso_salida_prefrio: document.getElementById('e_p5').value }) }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing2[index] = r.value; renderAllPackingRows(); } });
+    }
+    function editarFilaPacking3(index, dataActual) {
+        const labels = ['T.amb Recep','T.pulp Recep','T.amb In Gas','T.pulp In Gas','T.amb Out Gas','T.pulp Out Gas','T.amb In Pre','T.pulp In Pre','T.amb Out Pre','T.pulp Out Pre'];
+        const ids = ['e_t1','e_t2','e_t3','e_t4','e_t5','e_t6','e_t7','e_t8','e_t9','e_t10'];
+        const vals = [dataActual.t_amb_recep, dataActual.t_pulp_recep, dataActual.t_amb_ing, dataActual.t_pulp_ing, dataActual.t_amb_sal, dataActual.t_pulp_sal, dataActual.t_amb_pre_in, dataActual.t_pulp_pre_in, dataActual.t_amb_pre_out, dataActual.t_pulp_pre_out];
+        const inputs = ids.map((id, i) => `<input type="number" step="0.1" id="${id}" class="swal2-input" value="${vals[i] ?? ''}">`);
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Temperaturas (°C) — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, html: modalGrid(labels, inputs), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', preConfirm: () => ({ t_amb_recep: document.getElementById('e_t1').value, t_pulp_recep: document.getElementById('e_t2').value, t_amb_ing: document.getElementById('e_t3').value, t_pulp_ing: document.getElementById('e_t4').value, t_amb_sal: document.getElementById('e_t5').value, t_pulp_sal: document.getElementById('e_t6').value, t_amb_pre_in: document.getElementById('e_t7').value, t_pulp_pre_in: document.getElementById('e_t8').value, t_amb_pre_out: document.getElementById('e_t9').value, t_pulp_pre_out: document.getElementById('e_t10').value }) }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing3[index] = r.value; renderAllPackingRows(); } });
+    }
+    function editarFilaPacking4(index, dataActual) {
+        const labels = ['Recep.','In Gas.','Out Gas.','In Pre.','Out Pre.'];
+        const v = [dataActual.recepcion, dataActual.ingreso_gasificado, dataActual.salida_gasificado, dataActual.ingreso_prefrio, dataActual.salida_prefrio];
+        const inputs = [0,1,2,3,4].map(i => `<input type="number" step="0.1" id="e_h${i}" class="swal2-input" value="${v[i] ?? ''}">`);
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Humedad — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, html: modalGrid(labels, inputs), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', preConfirm: () => ({ recepcion: document.getElementById('e_h0').value, ingreso_gasificado: document.getElementById('e_h1').value, salida_gasificado: document.getElementById('e_h2').value, ingreso_prefrio: document.getElementById('e_h3').value, salida_prefrio: document.getElementById('e_h4').value }) }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing4[index] = r.value; renderAllPackingRows(); } });
+    }
+    function editarFilaPacking5(index, dataActual) {
+        const labels = ['Recep.','In Gas.','Out Gas.','In Pre.','Out Pre.'];
+        const v = [dataActual.recepcion, dataActual.ingreso_gasificado, dataActual.salida_gasificado, dataActual.ingreso_prefrio, dataActual.salida_prefrio];
+        const inputs = [0,1,2,3,4].map(i => `<input type="number" step="0.001" id="e_pr${i}" class="swal2-input" value="${v[i] ?? ''}">`);
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Presión ambiente — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, html: modalGrid(labels, inputs), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', preConfirm: () => ({ recepcion: document.getElementById('e_pr0').value, ingreso_gasificado: document.getElementById('e_pr1').value, salida_gasificado: document.getElementById('e_pr2').value, ingreso_prefrio: document.getElementById('e_pr3').value, salida_prefrio: document.getElementById('e_pr4').value }) }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing5[index] = r.value; renderAllPackingRows(); } });
+    }
+    function editarFilaPacking6(index, dataActual) {
+        const labels = ['Recep.','In Gas.','Out Gas.','In Pre.','Out Pre.'];
+        const v = [dataActual.recepcion, dataActual.ingreso_gasificado, dataActual.salida_gasificado, dataActual.ingreso_prefrio, dataActual.salida_prefrio];
+        const inputs = [0,1,2,3,4].map(i => `<input type="number" step="0.001" id="e_pf${i}" class="swal2-input" value="${v[i] ?? ''}">`);
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Presión fruta — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, html: modalGrid(labels, inputs), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', preConfirm: () => ({ recepcion: document.getElementById('e_pf0').value, ingreso_gasificado: document.getElementById('e_pf1').value, salida_gasificado: document.getElementById('e_pf2').value, ingreso_prefrio: document.getElementById('e_pf3').value, salida_prefrio: document.getElementById('e_pf4').value }) }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing6[index] = r.value; renderAllPackingRows(); } });
+    }
+    function editarFilaPacking7(index, dataActual) {
+        const labels = ['Recep.','In Gas.','Out Gas.','In Pre.','Out Pre.'];
+        const v = [dataActual.recepcion, dataActual.ingreso_gasificado, dataActual.salida_gasificado, dataActual.ingreso_prefrio, dataActual.salida_prefrio];
+        const inputs = [0,1,2,3,4].map(i => `<input type="number" step="0.001" id="e_d${i}" class="swal2-input" value="${v[i] ?? ''}">`);
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Déficit (Kpa) — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, html: modalGrid(labels, inputs), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', preConfirm: () => ({ recepcion: document.getElementById('e_d0').value, ingreso_gasificado: document.getElementById('e_d1').value, salida_gasificado: document.getElementById('e_d2').value, ingreso_prefrio: document.getElementById('e_d3').value, salida_prefrio: document.getElementById('e_d4').value }) }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing7[index] = r.value; renderAllPackingRows(); } });
+    }
+    function editarFilaPacking8(index, dataActual) {
+        var numFila = index + 1;
+        Swal.fire({ title: 'Editar Observación — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, input: 'text', inputValue: (dataActual.observacion || '').toString(), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' }).then(r => { if (r.isConfirmed && r.value !== undefined) { datosPacking.packing8[index] = { observacion: r.value }; renderAllPackingRows(); } });
+    }
+
+    // Agregar fila solo en esa sección; Replicar (en Pesos u otras) iguala todo a packing2 y copia última fila.
+    const btnAddPacking1 = document.getElementById('btn-add-packing');
+    if (btnAddPacking1) btnAddPacking1.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing1')) return;
+        const recepcion = (document.getElementById('reg_packing_recepcion') && document.getElementById('reg_packing_recepcion').value) || '';
+        const ingreso_gasificado = (document.getElementById('reg_packing_ingreso_gasificado') && document.getElementById('reg_packing_ingreso_gasificado').value) || '';
+        const salida_gasificado = (document.getElementById('reg_packing_salida_gasificado') && document.getElementById('reg_packing_salida_gasificado').value) || '';
+        const ingreso_prefrio = (document.getElementById('reg_packing_ingreso_prefrio') && document.getElementById('reg_packing_ingreso_prefrio').value) || '';
+        const salida_prefrio = (document.getElementById('reg_packing_salida_prefrio') && document.getElementById('reg_packing_salida_prefrio').value) || '';
+        const data = { recepcion, ingreso_gasificado, salida_gasificado, ingreso_prefrio, salida_prefrio };
+        datosPacking.packing1.push(data);
+        const tbody = document.getElementById('tbody-packing-1');
+        if (tbody) agregarFilaPacking1(data, tbody, datosPacking.packing1.length);
+        actualizarContadorPacking('next_clam_packing', datosPacking.packing1.length);
+        if (document.getElementById('reg_packing_recepcion')) document.getElementById('reg_packing_recepcion').value = '';
+        if (document.getElementById('reg_packing_ingreso_gasificado')) document.getElementById('reg_packing_ingreso_gasificado').value = '';
+        if (document.getElementById('reg_packing_salida_gasificado')) document.getElementById('reg_packing_salida_gasificado').value = '';
+        if (document.getElementById('reg_packing_ingreso_prefrio')) document.getElementById('reg_packing_ingreso_prefrio').value = '';
+        if (document.getElementById('reg_packing_salida_prefrio')) document.getElementById('reg_packing_salida_prefrio').value = '';
+    });
+
+    const btnAddPacking2 = document.getElementById('btn-add-pesos');
+    if (btnAddPacking2) btnAddPacking2.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing2')) return;
+        const peso_recepcion = (document.getElementById('reg_packing_peso_recepcion') && document.getElementById('reg_packing_peso_recepcion').value) || '';
+        const peso_ingreso_gasificado = (document.getElementById('reg_packing_peso_ingreso_gasificado') && document.getElementById('reg_packing_peso_ingreso_gasificado').value) || '';
+        const peso_salida_gasificado = (document.getElementById('reg_packing_peso_salida_gasificado') && document.getElementById('reg_packing_peso_salida_gasificado').value) || '';
+        const peso_ingreso_prefrio = (document.getElementById('reg_packing_peso_ingreso_prefrio') && document.getElementById('reg_packing_peso_ingreso_prefrio').value) || '';
+        const peso_salida_prefrio = (document.getElementById('reg_packing_peso_salida_prefrio') && document.getElementById('reg_packing_peso_salida_prefrio').value) || '';
+        const data = { peso_recepcion, peso_ingreso_gasificado, peso_salida_gasificado, peso_ingreso_prefrio, peso_salida_prefrio };
+        datosPacking.packing2.push(data);
+        const tbody = document.getElementById('tbody-packing-pesos');
+        if (tbody) agregarFilaPacking2(data, tbody, datosPacking.packing2.length);
+        actualizarContadorPacking('next_clam_pesos', datosPacking.packing2.length);
+        ['reg_packing_peso_recepcion','reg_packing_peso_ingreso_gasificado','reg_packing_peso_salida_gasificado','reg_packing_peso_ingreso_prefrio','reg_packing_peso_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    });
+
+    const btnAddPacking3 = document.getElementById('btn-add-temp');
+    if (btnAddPacking3) btnAddPacking3.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing3')) return;
+        const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const data = { t_amb_recep: get('reg_packing_temp_amb_recepcion'), t_pulp_recep: get('reg_packing_temp_pulp_recepcion'), t_amb_ing: get('reg_packing_temp_amb_ingreso_gas'), t_pulp_ing: get('reg_packing_temp_pulp_ingreso_gas'), t_amb_sal: get('reg_packing_temp_amb_salida_gas'), t_pulp_sal: get('reg_packing_temp_pulp_salida_gas'), t_amb_pre_in: get('reg_packing_temp_amb_ingreso_pre'), t_pulp_pre_in: get('reg_packing_temp_pulp_ingreso_pre'), t_amb_pre_out: get('reg_packing_temp_amb_salida_pre'), t_pulp_pre_out: get('reg_packing_temp_pulp_salida_pre') };
+        datosPacking.packing3.push(data);
+        const tbody = document.getElementById('tbody-packing-temp');
+        if (tbody) agregarFilaPacking3(data, tbody, datosPacking.packing3.length);
+        actualizarContadorPacking('next_clam_packing_temp', datosPacking.packing3.length);
+        ['reg_packing_temp_amb_recepcion','reg_packing_temp_pulp_recepcion','reg_packing_temp_amb_ingreso_gas','reg_packing_temp_pulp_ingreso_gas','reg_packing_temp_amb_salida_gas','reg_packing_temp_pulp_salida_gas','reg_packing_temp_amb_ingreso_pre','reg_packing_temp_pulp_ingreso_pre','reg_packing_temp_amb_salida_pre','reg_packing_temp_pulp_salida_pre'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    });
+
+    const btnAddPacking4 = document.getElementById('btn-add-packing-humedad');
+    if (btnAddPacking4) btnAddPacking4.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing4')) return;
+        const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const data = { recepcion: get('reg_packing_humedad_recepcion'), ingreso_gasificado: get('reg_packing_humedad_ingreso_gasificado'), salida_gasificado: get('reg_packing_humedad_salida_gasificado'), ingreso_prefrio: get('reg_packing_humedad_ingreso_prefrio'), salida_prefrio: get('reg_packing_humedad_salida_prefrio') };
+        datosPacking.packing4.push(data);
+        const tbody = document.getElementById('tbody-packing-humedad');
+        if (tbody) agregarFilaPacking4(data, tbody, datosPacking.packing4.length);
+        actualizarContadorPacking('next_clam_packing_humedad', datosPacking.packing4.length);
+        ['reg_packing_humedad_recepcion','reg_packing_humedad_ingreso_gasificado','reg_packing_humedad_salida_gasificado','reg_packing_humedad_ingreso_prefrio','reg_packing_humedad_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    });
+
+    const btnAddPacking5 = document.getElementById('btn-add-packing-presion');
+    if (btnAddPacking5) btnAddPacking5.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing5')) return;
+        const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const data = { recepcion: get('reg_packing_presion_recepcion'), ingreso_gasificado: get('reg_packing_presion_ingreso_gasificado'), salida_gasificado: get('reg_packing_presion_salida_gasificado'), ingreso_prefrio: get('reg_packing_presion_ingreso_prefrio'), salida_prefrio: get('reg_packing_presion_salida_prefrio') };
+        datosPacking.packing5.push(data);
+        const tbody = document.getElementById('tbody-packing-presion');
+        if (tbody) agregarFilaPacking5(data, tbody, datosPacking.packing5.length);
+        actualizarContadorPacking('next_clam_packing_presion', datosPacking.packing5.length);
+        ['reg_packing_presion_recepcion','reg_packing_presion_ingreso_gasificado','reg_packing_presion_salida_gasificado','reg_packing_presion_ingreso_prefrio','reg_packing_presion_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    });
+
+    const btnAddPacking6 = document.getElementById('btn-add-packing-presion-fruta');
+    if (btnAddPacking6) btnAddPacking6.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing6')) return;
+        const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const data = { recepcion: get('reg_packing_presion_fruta_recepcion'), ingreso_gasificado: get('reg_packing_presion_fruta_ingreso_gasificado'), salida_gasificado: get('reg_packing_presion_fruta_salida_gasificado'), ingreso_prefrio: get('reg_packing_presion_fruta_ingreso_prefrio'), salida_prefrio: get('reg_packing_presion_fruta_salida_prefrio') };
+        datosPacking.packing6.push(data);
+        const tbody = document.getElementById('tbody-packing-presion-fruta');
+        if (tbody) agregarFilaPacking6(data, tbody, datosPacking.packing6.length);
+        actualizarContadorPacking('next_clam_packing_presion_fruta', datosPacking.packing6.length);
+        ['reg_packing_presion_fruta_recepcion','reg_packing_presion_fruta_ingreso_gasificado','reg_packing_presion_fruta_salida_gasificado','reg_packing_presion_fruta_ingreso_prefrio','reg_packing_presion_fruta_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    });
+
+    const btnAddPacking7 = document.getElementById('btn-add-deficit');
+    if (btnAddPacking7) btnAddPacking7.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing7')) return;
+        const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const data = { recepcion: get('reg_packing_deficit_recepcion'), ingreso_gasificado: get('reg_packing_deficit_ingreso_gasificado'), salida_gasificado: get('reg_packing_deficit_salida_gasificado'), ingreso_prefrio: get('reg_packing_deficit_ingreso_prefrio'), salida_prefrio: get('reg_packing_deficit_salida_prefrio') };
+        datosPacking.packing7.push(data);
+        const tbody = document.getElementById('tbody-packing-deficit');
+        if (tbody) agregarFilaPacking7(data, tbody, datosPacking.packing7.length);
+        actualizarContadorPacking('next_clam_deficit', datosPacking.packing7.length);
+        ['reg_packing_deficit_recepcion','reg_packing_deficit_ingreso_gasificado','reg_packing_deficit_salida_gasificado','reg_packing_deficit_ingreso_prefrio','reg_packing_deficit_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    });
+
+    const btnAddPacking8 = document.getElementById('btn-add-packing-obs');
+    if (btnAddPacking8) btnAddPacking8.addEventListener('click', () => {
+        if (!canAgregarFilaPacking('packing8')) return;
+        const observacion = (document.getElementById('reg_packing_obs_texto') && document.getElementById('reg_packing_obs_texto').value) || '';
+        datosPacking.packing8.push({ observacion });
+        const tbody = document.getElementById('tbody-packing-obs');
+        if (tbody) agregarFilaPacking8({ observacion }, tbody, datosPacking.packing8.length);
+        actualizarContadorPacking('next_clam_packing_obs', datosPacking.packing8.length);
+        if (document.getElementById('reg_packing_obs_texto')) document.getElementById('reg_packing_obs_texto').value = '';
+    });
+
+    // --- VISUAL: restaurar datos del ensayo al cambiar rótulo ---
     function restaurarDatosEnsayo(tipo, ensayo) {
         if (tipo === 'visual') {
             const datos = datosEnsayos.visual[ensayo];
@@ -783,9 +1476,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ========================================
-    // ACTUALIZAR CONTADOR
-    // ========================================
     function actualizarContador(contadorId, valor) {
         const contador = document.getElementById(contadorId);
         if (contador) {
@@ -793,9 +1483,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ========================================
-    // CALCULAR TIEMPO EMPLEADO
-    // ========================================
     function calcularTiempoEmpleado(inicio, termino) {
         if (!inicio || !termino) return "0'";
         
@@ -811,9 +1498,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${diferencia}'`;
     }
 
-    // ========================================
-    // AGREGAR FILA - VISUAL (PESOS)
-    // ========================================
+    // --- Agregar fila: Visual (pesos), Jarras, Temperaturas, Tiempos, Humedad, Presión, Observación ---
     function agregarFilaVisual(data, tbody, clamNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-clam', clamNum);
@@ -852,9 +1537,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AGREGAR FILA - JARRAS
-    // ========================================
     function agregarFilaJarras(data, tbody, rowNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-row', rowNum);
@@ -893,9 +1575,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AGREGAR FILA - TEMPERATURAS
-    // ========================================
     function agregarFilaTemperaturas(data, tbody, clamNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-clam', clamNum);
@@ -947,9 +1626,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AGREGAR FILA - TIEMPOS
-    // ========================================
     function agregarFilaTiempos(data, tbody, clamNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-clam', clamNum);
@@ -995,9 +1671,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AGREGAR FILA - HUMEDAD
-    // ========================================
     function agregarFilaHumedad(data, tbody, clamNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-clam', clamNum);
@@ -1041,9 +1714,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AGREGAR FILA - PRESIÓN AMBIENTE
-    // ========================================
     function agregarFilaPresionAmbiente(data, tbody, clamNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-clam', clamNum);
@@ -1087,9 +1757,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AGREGAR FILA - PRESIÓN FRUTA
-    // ========================================
     function agregarFilaPresionFruta(data, tbody, clamNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-clam', clamNum);
@@ -1133,9 +1800,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AGREGAR FILA - OBSERVACIÓN
-    // ========================================
     function agregarFilaObservacion(data, tbody, clamNum) {
         const row = document.createElement('tr');
         row.setAttribute('data-clam', clamNum);
@@ -1173,9 +1837,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - VISUAL
-    // ========================================
+    // --- Editar fila: Visual, Jarras, Temperaturas, Tiempos, Humedad, Presión, Observación ---
     function editarFilaVisual(clamNum, dataActual) {
         Swal.fire({
             title: `Editar Registro #${clamNum}`,
@@ -1250,35 +1912,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - JARRAS
-    // ========================================
     function editarFilaJarras(rowNum, dataActual) {
+        var htmlJarra = '<div class="packing-modal-grid">' +
+            '<div class="packing-modal-field"><label>N° Jarra:</label><input type="number" id="edit_jarra" class="swal2-input" value="' + (dataActual.jarra || '') + '"></div>' +
+            '<div class="packing-modal-field"><label>Tipo:</label><select id="edit_tipo" class="swal2-input"><option value="C"' + (dataActual.tipo === 'C' ? ' selected' : '') + '>Cosecha</option><option value="T"' + (dataActual.tipo === 'T' ? ' selected' : '') + '>Traslado</option></select></div>' +
+            '<div class="packing-modal-field"><label>Hora Inicio:</label><input type="time" id="edit_inicio" class="swal2-input" value="' + (dataActual.inicio || '') + '"></div>' +
+            '<div class="packing-modal-field"><label>Hora Término:</label><input type="time" id="edit_termino" class="swal2-input" value="' + (dataActual.termino || '') + '"></div>' +
+            '</div>';
         Swal.fire({
-            title: `Editar Jarra #${rowNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">N° Jarra:</label>
-                        <input type="number" id="edit_jarra" class="swal2-input" value="${dataActual.jarra}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Tipo:</label>
-                        <select id="edit_tipo" class="swal2-input" style="width: 90%; margin: 0;">
-                            <option value="C" ${dataActual.tipo === 'C' ? 'selected' : ''}>Cosecha</option>
-                            <option value="T" ${dataActual.tipo === 'T' ? 'selected' : ''}>Traslado</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Hora Inicio:</label>
-                        <input type="time" id="edit_inicio" class="swal2-input" value="${dataActual.inicio}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Hora Término:</label>
-                        <input type="time" id="edit_termino" class="swal2-input" value="${dataActual.termino}" style="width: 90%; margin: 0;">
-                    </div>
-                </div>
-            `,
+            title: 'Editar Jarra #' + rowNum,
+            customClass: { popup: 'packing-edit-modal' },
+            html: htmlJarra,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
@@ -1316,9 +1960,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - TEMPERATURAS
-    // ========================================
     function editarFilaTemperaturas(clamNum, dataActual) {
         Swal.fire({
             title: `Editar Temperaturas #${clamNum}`,
@@ -1400,9 +2041,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - TIEMPOS
-    // ========================================
     function editarFilaTiempos(clamNum, dataActual) {
         Swal.fire({
             title: `Editar Tiempos #${clamNum}`,
@@ -1465,9 +2103,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - HUMEDAD
-    // ========================================
     function editarFilaHumedad(clamNum, dataActual) {
         Swal.fire({
             title: `Editar Humedad #${clamNum}`,
@@ -1528,9 +2163,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - PRESIÓN AMBIENTE
-    // ========================================
     function editarFilaPresionAmbiente(clamNum, dataActual) {
         Swal.fire({
             title: `Editar Presión Ambiente #${clamNum}`,
@@ -1591,9 +2223,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - PRESIÓN FRUTA
-    // ========================================
     function editarFilaPresionFruta(clamNum, dataActual) {
         Swal.fire({
             title: `Editar Presión Fruta #${clamNum}`,
@@ -1654,9 +2283,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // EDITAR FILA - OBSERVACIÓN
-    // ========================================
     function editarFilaObservacion(clamNum, dataActual) {
         Swal.fire({
             title: `Editar Observación #${clamNum}`,
@@ -1693,9 +2319,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // ELIMINAR FILA
-    // ========================================
     function eliminarFila(tipo, num) {
         Swal.fire({
             title: '¿Estás seguro?',
@@ -1723,9 +2346,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // REPLICAR FILA (SIN SWAL AL AGREGAR, SOLO AL ALCANZAR LÍMITE)
-    // ========================================
     function replicarFila(tipo, data) {
         if (!ensayoActual) {
             Swal.fire({ 
@@ -1754,9 +2374,6 @@ document.addEventListener('DOMContentLoaded', () => {
         window.formHasChanges = true;
     }
 
-    // ========================================
-    // SISTEMA DE TOGGLE DINÁMICO
-    // ========================================
     function abrirCollapsible(bodyId) {
         const body = document.getElementById(bodyId);
         const header = document.querySelector(`[data-target="${bodyId}"]`);
@@ -1788,9 +2405,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // ========================================
-    // CALCULAR TIEMPO AUTOMÁTICO EN JARRAS
-    // ========================================
     const inputInicio = document.getElementById('reg_jarras_inicio');
     const inputTermino = document.getElementById('reg_jarras_termino');
     const spanTiempo = document.getElementById('reg_jarras_tiempo');
@@ -1810,9 +2424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR PESOS (VISUAL) - VALIDACIONES
-    // ========================================
+    // --- Botones Añadir: Pesos, Jarras, Temperaturas, Tiempos, Humedad, Presión, Observación ---
     const btnAddVisual = document.getElementById('btn-add-visual');
     if (btnAddVisual) {
         btnAddVisual.addEventListener('click', () => {
@@ -1884,9 +2496,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR JARRAS - VALIDACIONES
-    // ========================================
     const btnAddJarras = document.getElementById('btn-add-jarras');
     if (btnAddJarras) {
         btnAddJarras.addEventListener('click', () => {
@@ -1943,9 +2552,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR TEMPERATURAS - VALIDACIONES (todos obligatorios, no negativos)
-    // ========================================
     const btnAddTemp = document.getElementById('btn-add-temperaturas');
     if (btnAddTemp) {
         btnAddTemp.addEventListener('click', () => {
@@ -2023,9 +2629,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR TIEMPOS - VALIDACIONES (orden ascendente)
-    // ========================================
     const btnAddTiempos = document.getElementById('btn-add-tiempos');
     if (btnAddTiempos) {
         btnAddTiempos.addEventListener('click', () => {
@@ -2077,9 +2680,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR HUMEDAD - VALIDACIONES (todos obligatorios, no negativos)
-    // ========================================
     const btnAddHumedad = document.getElementById('btn-add-humedad');
     if (btnAddHumedad) {
         btnAddHumedad.addEventListener('click', () => {
@@ -2135,9 +2735,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR PRESIÓN AMBIENTE - VALIDACIONES (todos obligatorios, no negativos)
-    // ========================================
     const btnAddPresion = document.getElementById('btn-add-presion');
     if (btnAddPresion) {
         btnAddPresion.addEventListener('click', () => {
@@ -2192,9 +2789,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR PRESIÓN FRUTA - VALIDACIONES (todos obligatorios, no negativos)
-    // ========================================
     const btnAddPresionFruta = document.getElementById('btn-add-presion-fruta');
     if (btnAddPresionFruta) {
         btnAddPresionFruta.addEventListener('click', () => {
@@ -2249,9 +2843,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // AÑADIR OBSERVACIÓN - SIN VALIDACIONES
-    // ========================================
     const btnAddObs = document.getElementById('btn-add-obs');
     if (btnAddObs) {
         btnAddObs.addEventListener('click', () => {
@@ -2281,9 +2872,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========================================
-    // 8. GUARDADO FINAL CON LÓGICA DE JOIN
-    // ========================================
+    // --- Guardado final Visual: join datos, saveLocal, POST cuando hay conexión ---
     const btnGuardarGeneral = document.getElementById('btn-guardar-registro');
 
     if (btnGuardarGeneral) {
@@ -2326,31 +2915,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const rotuloSeleccionado = document.getElementById('reg_rotulo_ensayo').value;
-            if (!rotuloSeleccionado) {
-                Swal.fire({
-                    title: 'Atención',
-                    text: 'Debes seleccionar un Rótulo de Muestra (Ensayo)',
-                    icon: 'warning',
-                    confirmButtonColor: '#2f7cc0'
-                });
-                toggleSaving(false);
-                return;
-            }
 
-            let hayDatos = false;
             const datosDelTipo = datosEnsayos[tipoMedicion];
-            
-            for (let ensayo in datosDelTipo) {
-                if (datosDelTipo[ensayo].visual && datosDelTipo[ensayo].visual.length > 0) {
-                    hayDatos = true;
-                    break;
-                }
-            }
+            // Incluir TODOS los ensayos que tengan al menos una fila en Visual (1, 2, 3, 4 de forma independiente)
+            const ensayosAIncluir = [1, 2, 3, 4].filter(function(e) {
+                const ed = datosDelTipo[e];
+                return ed && ed.visual && ed.visual.length > 0;
+            });
 
-            if (!hayDatos) {
+            if (ensayosAIncluir.length === 0) {
                 Swal.fire({
                     title: 'Atención',
-                    text: 'Debes agregar al menos un registro de peso (Visual) en algún ensayo',
+                    text: 'Debes agregar al menos un registro de peso (Visual) en algún ensayo (1, 2, 3 o 4).',
                     icon: 'warning',
                     confirmButtonColor: '#2f7cc0'
                 });
@@ -2358,82 +2934,53 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Validar consistencia de datos (EXCEPTO jarras)
-            for (let numEnsayo in datosDelTipo) {
-                const ensayo = datosDelTipo[numEnsayo];
-                
-                if (ensayo.visual && ensayo.visual.length > 0) {
-                    const totalVisual = ensayo.visual.length;
-                    
-                    const secciones = ['temperaturas', 'tiempos', 'humedad', 'presionambiente', 'presionfruta', 'observacion'];
-                    
-                    for (let seccion of secciones) {
-                        if (ensayo[seccion] && ensayo[seccion].length > 0 && ensayo[seccion].length !== totalVisual) {
-                            const nombresSeccion = { temperaturas: 'Temperaturas', tiempos: 'Tiempos', humedad: 'Humedad', presionambiente: 'Presión ambiente', presionfruta: 'Presión fruta', observacion: 'Observación' };
-                            Swal.fire({
-                                title: 'Inconsistencia de filas',
-                                html: `El <strong>Ensayo ${numEnsayo}</strong> tiene <strong>${totalVisual}</strong> filas en Visual, pero <strong>${ensayo[seccion].length}</strong> en ${nombresSeccion[seccion] || seccion}.<br><br>Las filas deben coincidir en total (Jarras puede tener más o menos).`,
-                                icon: 'error',
-                                confirmButtonColor: '#d33'
-                            });
-                            toggleSaving(false);
-                            return;
-                        }
-                    }
-                }
-            }
+            // Persistir la cabecera del ensayo actual (el que está seleccionado en el rótulo) antes de armar filas
+            if (rotuloSeleccionado) guardarFormHeaderEnEnsayo(rotuloSeleccionado);
 
-            // Antes de registrar (solo con internet): comprobar qué ensayos ya existen; si algunos sí y otros no, ofrecer registrar solo los no registrados
-            const fechaReg = (document.getElementById('reg_fecha') && document.getElementById('reg_fecha').value) ? document.getElementById('reg_fecha').value.trim() : '';
-            const ensayosConDatos = [];
-            for (let numEnsayo in datosDelTipo) {
-                if (datosDelTipo[numEnsayo].visual && datosDelTipo[numEnsayo].visual.length > 0) ensayosConDatos.push(numEnsayo);
-            }
-            let ensayosAIncluir = ensayosConDatos.slice();
-            if (fechaReg && ensayosConDatos.length > 0 && navigator.onLine) {
-                const ensayosQueExisten = [];
-                const ensayosQueNoExisten = [];
-                for (const numEnsayo of ensayosConDatos) {
-                    try {
-                        const resExiste = await existeRegistroFechaEnsayo(fechaReg, numEnsayo);
-                        if (resExiste.ok && resExiste.existe) ensayosQueExisten.push(resExiste.ensayo_numero || numEnsayo);
-                        else ensayosQueNoExisten.push(numEnsayo);
-                    } catch (_) {
-                        ensayosQueNoExisten.push(numEnsayo);
-                    }
-                }
-                if (ensayosQueExisten.length > 0) {
-                    if (ensayosQueNoExisten.length === 0) {
+            // Validar consistencia de filas (EXCEPTO jarras) para CADA ensayo a incluir
+            const secciones = ['temperaturas', 'tiempos', 'humedad', 'presionambiente', 'presionfruta', 'observacion'];
+            const nombresSeccion = { temperaturas: 'Temperaturas', tiempos: 'Tiempos', humedad: 'Humedad', presionambiente: 'Presión ambiente', presionfruta: 'Presión fruta', observacion: 'Observación' };
+            for (let numE of ensayosAIncluir) {
+                const ensayoData = datosDelTipo[numE];
+                const totalVisual = ensayoData.visual.length;
+                for (let seccion of secciones) {
+                    if (ensayoData[seccion] && ensayoData[seccion].length > 0 && ensayoData[seccion].length !== totalVisual) {
                         Swal.fire({
-                            title: 'Ya registrados',
-                            html: 'Todos los ensayos con datos ya están registrados para esta fecha.<br>No hay nada nuevo que guardar.',
-                            icon: 'info',
-                            confirmButtonColor: '#2f7cc0'
+                            title: 'Inconsistencia de filas',
+                            html: `El <strong>Ensayo ${numE}</strong> tiene <strong>${totalVisual}</strong> filas en Visual, pero <strong>${ensayoData[seccion].length}</strong> en ${nombresSeccion[seccion] || seccion}.<br><br>Las filas deben coincidir en total (Jarras puede tener más o menos).`,
+                            icon: 'error',
+                            confirmButtonColor: '#d33'
                         });
                         toggleSaving(false);
                         return;
                     }
-                    const textoExisten = ensayosQueExisten.map(n => 'Ensayo ' + n).join(', ');
-                    const textoNoExisten = ensayosQueNoExisten.map(n => 'Ensayo ' + n).join(' y ');
-                    const result = await Swal.fire({
-                        title: 'Algunos ya están registrados',
-                        html: '<strong>' + textoExisten + '</strong> ya está(n) registrado(s) para esta fecha.<br><br>¿Deseas que registremos solo <strong>' + textoNoExisten + '</strong>?',
-                        icon: 'question',
-                        showCancelButton: true,
-                        confirmButtonColor: '#2f7cc0',
-                        cancelButtonColor: '#6c757d',
-                        confirmButtonText: 'Sí, registrar solo los no registrados',
-                        cancelButtonText: 'Cancelar'
-                    });
-                    if (!result.isConfirmed) {
-                        toggleSaving(false);
-                        return;
-                    }
-                    ensayosAIncluir = ensayosQueNoExisten;
                 }
             }
 
-            // Construir filas planas de 50 columnas para Excel (solo para ensayos a incluir)
+            // Antes de registrar (solo con internet): comprobar si algún ensayo ya existe para su fecha
+            if (navigator.onLine) {
+                try {
+                    for (let numE of ensayosAIncluir) {
+                        const header = datosEnsayos.visual[numE] && datosEnsayos.visual[numE].formHeader;
+                        const fechaEnsayo = (header && header.fecha) ? String(header.fecha).trim() : '';
+                        if (fechaEnsayo) {
+                            const resExiste = await existeRegistroFechaEnsayo(fechaEnsayo, numE);
+                            if (resExiste.ok && resExiste.existe) {
+                                Swal.fire({
+                                    title: 'Ya registrado',
+                                    html: 'El <strong>Ensayo ' + numE + '</strong> ya está registrado para la fecha ' + fechaEnsayo + '. Cambia la fecha de ese ensayo o no lo incluyas.',
+                                    icon: 'info',
+                                    confirmButtonColor: '#2f7cc0'
+                                });
+                                toggleSaving(false);
+                                return;
+                            }
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            // Construir filas planas de 50 columnas: UNA fila por cada registro del ensayo seleccionado (todas las filas en orden)
             const allRows = [];
             
             for (let numEnsayo of ensayosAIncluir) {
@@ -2442,12 +2989,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (ensayo.visual && ensayo.visual.length > 0) {
                     
+                    // Normalizar n_jarra para comparar (string vs number)
+                    const normJarra = (v) => (v == null || v === '') ? '' : String(v).trim();
                     // JOIN entre visual y jarras por n_jarra
                     const registrosCombinados = ensayo.visual.map((visual, index) => {
-                        
+                        const vJarra = normJarra(visual.jarra);
                         // Buscar jarras tipo C y T para esta jarra
-                        const jarraC = ensayo.jarras ? ensayo.jarras.find(j => j.jarra === visual.jarra && j.tipo === 'C') : null;
-                        const jarraT = ensayo.jarras ? ensayo.jarras.find(j => j.jarra === visual.jarra && j.tipo === 'T') : null;
+                        const jarraC = ensayo.jarras ? ensayo.jarras.find(j => normJarra(j.jarra) === vJarra && j.tipo === 'C') : null;
+                        const jarraT = ensayo.jarras ? ensayo.jarras.find(j => normJarra(j.jarra) === vJarra && j.tipo === 'T') : null;
                         
                         const tempCorrespondiente = ensayo.temperaturas && ensayo.temperaturas[index] ? ensayo.temperaturas[index] : null;
                         const tiempoCorrespondiente = ensayo.tiempos && ensayo.tiempos[index] ? ensayo.tiempos[index] : null;
@@ -2517,17 +3066,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                     });
                     
-                    // Caso BACKUP: Jarras con tiempos pero sin peso
+                    // Caso BACKUP: Jarras con tiempos pero sin peso (capturar C y T; no dejar datos en el aire)
                     if (ensayo.jarras) {
+                        const nJarraNum = (j) => parseInt(j.jarra) || 0;
                         ensayo.jarras.forEach(jarra => {
-                            const yaExiste = registrosCombinados.some(r => r.n_jarra === parseInt(jarra.jarra));
-                            if (!yaExiste) {
-                                const esC = jarra.tipo === 'C';
-                                const esT = jarra.tipo === 'T';
-                                
+                            const nJarra = nJarraNum(jarra);
+                            const esC = jarra.tipo === 'C';
+                            const esT = jarra.tipo === 'T';
+                            const existente = registrosCombinados.find(r => r.n_jarra === nJarra);
+                            if (!existente) {
                                 registrosCombinados.push({
                                     n_clamshell: 0,
-                                    n_jarra: parseInt(jarra.jarra) || 0,
+                                    n_jarra: nJarra,
                                     peso_1: 0.0,
                                     peso_2: 0.0,
                                     llegada_acopio: 0.0,
@@ -2546,24 +3096,41 @@ document.addEventListener('DOMContentLoaded', () => {
                                     presion_vapor_fruta: null,
                                     observacion: null
                                 });
+                            } else if (existente.n_clamshell === 0) {
+                                // Misma jarra ya tiene fila (p.ej. por C); completar con T o C que falte
+                                if (esC && !existente.inicio_c) {
+                                    existente.inicio_c = jarra.inicio || '';
+                                    existente.termino_c = jarra.termino || '';
+                                    existente.min_c = jarra.tiempo || '';
+                                }
+                                if (esT && !existente.inicio_t) {
+                                    existente.inicio_t = jarra.inicio || '';
+                                    existente.termino_t = jarra.termino || '';
+                                    existente.min_t = jarra.tiempo || '';
+                                }
                             }
                         });
                     }
                     
-                    const fecha = document.getElementById('reg_fecha').value;
-                    const responsable = document.getElementById('reg_responsable').value;
-                    const guia_remision = document.getElementById('reg_guia_remision').value;
-                    const variedad = document.getElementById('reg_variedad').value;
-                    const placa_vehiculo = document.getElementById('reg_placa').value;
-                    const hora_inicio = document.getElementById('reg_hora_inicio').value;
-                    const dias_precosecha = document.getElementById('reg_dias_precosecha').value || '';
-                    const traz_etapa = document.getElementById('reg_traz_etapa').value;
-                    const traz_campo = document.getElementById('reg_traz_campo').value;
-                    const traz_libre = document.getElementById('reg_traz_libre').value || '';
+                    // Cabecera de ESTE ensayo (cada ensayo tiene su propia fecha, responsable, etc.)
+                    const headerEnsayo = (datosEnsayos.visual[numEnsayo] && datosEnsayos.visual[numEnsayo].formHeader) || {};
+                    const elVal = function(id) { var x = document.getElementById(id); return x ? (x.value || '') : ''; };
+                    const fecha = (headerEnsayo.fecha != null && headerEnsayo.fecha !== '') ? headerEnsayo.fecha : elVal('reg_fecha');
+                    const responsable = (headerEnsayo.responsable != null && headerEnsayo.responsable !== '') ? headerEnsayo.responsable : elVal('reg_responsable');
+                    const guia_remision = (headerEnsayo.guia_remision != null && headerEnsayo.guia_remision !== '') ? headerEnsayo.guia_remision : elVal('reg_guia_remision');
+                    const variedad = (headerEnsayo.variedad != null && headerEnsayo.variedad !== '') ? headerEnsayo.variedad : elVal('reg_variedad');
+                    const placa_vehiculo = (headerEnsayo.placa != null && headerEnsayo.placa !== '') ? headerEnsayo.placa : elVal('reg_placa');
+                    const hora_inicio = (headerEnsayo.hora_inicio != null && headerEnsayo.hora_inicio !== '') ? headerEnsayo.hora_inicio : (elVal('reg_hora_inicio') || '07:15');
+                    const dias_precosecha = (headerEnsayo.dias_precosecha != null && headerEnsayo.dias_precosecha !== '') ? headerEnsayo.dias_precosecha : (elVal('reg_dias_precosecha') || '');
+                    const traz_etapa = (headerEnsayo.traz_etapa != null && headerEnsayo.traz_etapa !== '') ? headerEnsayo.traz_etapa : elVal('reg_traz_etapa');
+                    const traz_campo = (headerEnsayo.traz_campo != null && headerEnsayo.traz_campo !== '') ? headerEnsayo.traz_campo : elVal('reg_traz_campo');
+                    const traz_libre = (headerEnsayo.traz_libre != null && headerEnsayo.traz_libre !== '') ? headerEnsayo.traz_libre : (elVal('reg_traz_libre') || '');
+                    const fundo = (headerEnsayo.fundo != null && headerEnsayo.fundo !== '') ? headerEnsayo.fundo : (elVal('reg_fundo') || '');
+                    const observacion_header = (headerEnsayo.observacion != null && headerEnsayo.observacion !== '') ? headerEnsayo.observacion : (elVal('reg_observacion_formato') || '');
                     const ensayo_numero = parseInt(numEnsayo);
-                    const ensayo_nombre = `Ensayo ${numEnsayo}`;
+                    const ensayo_nombre = 'Ensayo ' + numEnsayo;
 
-                    // Convertir cada registro a fila plana de 50 columnas (sin TEMP_AMB; wrapper_tempambiente eliminado)
+                    // Convertir cada registro a fila plana de 52 columnas (FUNDO, OBSERVACION_FORMATO; sin TEMP_AMB)
                     registrosCombinados.forEach(reg => {
                         const tm = reg.temperatura_muestra;
                         const ti = reg.tiempos;
@@ -2573,7 +3140,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         const row = [
                             fecha, responsable, guia_remision, variedad, placa_vehiculo, hora_inicio, dias_precosecha,
-                            traz_etapa, traz_campo, traz_libre,
+                            traz_etapa, traz_campo, traz_libre, fundo, observacion_header,
                             ensayo_numero, ensayo_nombre,
                             reg.n_clamshell ?? '', reg.n_jarra ?? '',
                             reg.peso_1 ?? '', reg.peso_2 ?? '', reg.llegada_acopio ?? '', reg.despacho_acopio ?? '',
@@ -2587,12 +3154,18 @@ document.addEventListener('DOMContentLoaded', () => {
                             (hr?.inicio != null) ? hr.inicio : '', (hr?.termino != null) ? hr.termino : '', (hr?.llegada_acopio != null) ? hr.llegada_acopio : '', (hr?.despacho_acopio != null) ? hr.despacho_acopio : '',
                             (pva?.inicio != null) ? pva.inicio : '', (pva?.termino != null) ? pva.termino : '', (pva?.llegada_acopio != null) ? pva.llegada_acopio : '', (pva?.despacho_acopio != null) ? pva.despacho_acopio : '',
                             (pvf?.inicio != null) ? pvf.inicio : '', (pvf?.termino != null) ? pvf.termino : '', (pvf?.llegada_acopio != null) ? pvf.llegada_acopio : '', (pvf?.despacho_acopio != null) ? pvf.despacho_acopio : '',
-                            reg.observacion || ''
+                            (typeof reg.observacion === 'string' ? reg.observacion : (reg.observacion && reg.observacion.observacion)) || ''
                         ];
                         allRows.push(row);
                     });
                 }
             }
+
+            // Log para depuración: qué filas se van a guardar y enviar
+            console.log('[GUARDAR REGISTRO] Filas construidas:', allRows.length);
+            console.log('[GUARDAR REGISTRO] Payload (rows):', JSON.stringify(allRows.map((r, i) => ({ index: i + 1, n_clamshell: r[14], n_jarra: r[15], ensayo: r[12] }))));
+            if (allRows.length > 0) console.log('[GUARDAR REGISTRO] Primera fila (52 cols):', allRows[0]);
+            if (allRows.length > 1) console.log('[GUARDAR REGISTRO] Última fila (52 cols):', allRows[allRows.length - 1]);
 
             try {
                 lastSaveAt = Date.now();
@@ -2603,7 +3176,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 Swal.fire({
                     title: '¡Registro Guardado!',
-                    html: 'Los datos se han guardado correctamente.<br><small>Se enviarán al servidor cuando haya conexión.</small>',
+                    html: 'Se guardaron <strong>' + allRows.length + '</strong> filas de <strong>' + ensayosAIncluir.length + '</strong> ensayo(s) (Ensayo ' + ensayosAIncluir.join(', Ensayo ') + ').<br><small>Se enviarán al servidor cuando haya conexión.</small>',
                     icon: 'success',
                     confirmButtonColor: '#2f7cc0',
                     confirmButtonText: 'Entendido'
