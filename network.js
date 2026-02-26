@@ -49,12 +49,13 @@ function cancelarReintentos() {
 }
 
 // Guarda en LocalStorage. Evita cola duplicada: si ya hay un pendiente con las mismas filas, no añade otro.
+// Retorna el uid del registro guardado o null si no se guardó (duplicado).
 export const saveLocal = (data) => {
     const current = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
     const rowsStr = JSON.stringify((data.rows || []).map(r => r.slice(0, 50)));
     const yaHayIgual = current.some(it => it.status !== 'subido' && JSON.stringify((it.rows || []).map(r => r.slice(0, 50))) === rowsStr);
     if (yaHayIgual) {
-        return;
+        return null;
     }
     const dataConId = {
         ...data,
@@ -64,13 +65,14 @@ export const saveLocal = (data) => {
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...current, dataConId]));
     updateUI();
+    return dataConId.uid;
 };
 
 // Enviar a Google Apps Script (mode no-cors evita CORS)
 async function sendToCloud(d) {
     const numRows = (d && d.rows) ? d.rows.length : 0;
     console.log('[SYNC] Enviando a la nube:', numRows, 'filas. uid:', d.uid);
-    console.log('[SYNC] Resumen por fila:', (d.rows || []).map((r, i) => ({ i: i + 1, fecha: r[0], ensayo: r[10], n_clamshell: r[12], n_jarra: r[13] })));
+    console.log('[SYNC] Resumen por fila:', (d.rows || []).map((r, i) => ({ i: i + 1, fecha: r[0], ensayo: r[12], n_clamshell: r[14], n_jarra: r[15] })));
     await fetch(API_URL, {
         method: "POST",
         mode: "no-cors",
@@ -112,7 +114,7 @@ async function sync() {
         const rowsRejected = [];
         for (const row of rows) {
             const fecha = row[0];
-            const ensayoNum = row[10];
+            const ensayoNum = row[12];
             if (fecha == null || String(fecha).trim() === '') {
                 rowsToSend.push(row);
                 continue;
@@ -150,7 +152,7 @@ async function sync() {
                 await sendToCloud({ ...item, rows: rowsToSend });
                 let currentItems = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
                 currentItems = currentItems.filter(it => it.uid !== item.uid);
-                const horaSubida = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const horaSubida = new Date().toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 currentItems.push({ ...item, rows: rowsToSend, status: 'subido', subidoAt: horaSubida });
                 rowsRejected.forEach(row => {
                     currentItems.push({
@@ -169,7 +171,7 @@ async function sync() {
 
             await sendToCloud(item);
             let currentItems = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-            const horaSubida = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const horaSubida = new Date().toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
             currentItems = currentItems.map(it =>
                 it.uid === item.uid ? { ...it, status: 'subido', subidoAt: horaSubida } : it
             );

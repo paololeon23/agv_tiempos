@@ -184,10 +184,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        let items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        let items = JSON.parse(localStorage.getItem(STORAGE_KEY) || []);
+        // Ordenar de más reciente a más antiguo (por timestamp)
+        items.sort((a, b) => (new Date(b.timestamp || 0)).getTime() - (new Date(a.timestamp || 0)).getTime());
         // Limitar historial a ~40 ítems: eliminar los más antiguos para no sobrecargar
         if (items.length > HISTORIAL_MAX_ITEMS) {
-            items = items.slice(-HISTORIAL_MAX_ITEMS);
+            items = items.slice(0, HISTORIAL_MAX_ITEMS);
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
         }
         contenedor.innerHTML = '';
@@ -214,17 +216,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const ensayosMap = {};
             itemsDeDia.forEach(item => {
                 const estado = item.status === 'subido' ? 'subido' : (item.status === 'rechazado_duplicado' ? 'rechazado_duplicado' : 'pendiente');
-                const horaSubida = item.subidoAt || (item.timestamp ? (function () { var d = new Date(item.timestamp); return isNaN(d.getTime()) ? item.timestamp : d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); })() : '');
+                let horaSubida = item.subidoAt || '';
+                if (!horaSubida && item.timestamp) {
+                    const d = new Date(item.timestamp);
+                    horaSubida = isNaN(d.getTime()) ? item.timestamp : d.toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                }
                 (item.rows || []).forEach(row => {
                     const ensayoNum = row[12];
                     const ensayoNom = row[13] || ('Ensayo ' + ensayoNum);
                     const clave = `${ensayoNum}|${ensayoNom}`;
                     if (!ensayosMap[clave]) {
-                        ensayosMap[clave] = { ensayoNum, ensayoNom, totalClamshells: 0, estados: new Set(), rechazoMotivo: null, horaSubida: '' };
+                        ensayosMap[clave] = { ensayoNum, ensayoNom, totalClamshells: 0, estados: new Set(), rechazoMotivo: null, horaSubida: '', timestamp: item.timestamp || '' };
                     }
                     ensayosMap[clave].totalClamshells += 1;
                     ensayosMap[clave].estados.add(estado);
                     if (estado === 'subido' && horaSubida) ensayosMap[clave].horaSubida = horaSubida;
+                    if ((estado === 'pendiente' || estado === 'rechazado_duplicado') && horaSubida && !ensayosMap[clave].horaSubida) ensayosMap[clave].horaSubida = horaSubida;
                     if (item.status === 'rechazado_duplicado' && item.rechazoMotivo)
                         ensayosMap[clave].rechazoMotivo = item.rechazoMotivo;
                 });
@@ -235,6 +242,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const claseEstado = estadoFinal === 'pendiente' ? 'hist-status-pendiente' : (estadoFinal === 'rechazado_duplicado' ? 'hist-status-rechazado' : 'hist-status-subido');
                 const textoEstado = estadoFinal === 'pendiente' ? 'Pendiente' : (estadoFinal === 'rechazado_duplicado' ? 'No subido (ya registrado)' : 'Subido');
                 const detalleMsg = estadoFinal === 'pendiente' ? 'En cola; se enviará cuando haya conexión.' : (estadoFinal === 'rechazado_duplicado' ? (info.rechazoMotivo || 'No se subió porque ya estaba registrado este ensayo para esta fecha.') : 'Registro enviado correctamente.');
+                // Hora de subida para ordenar: subidoAt (hora real) o timestamp
+                const horaSubidaStr = info.horaSubida || '';
+                const ts = (info.timestamp || '').toString();
+                let sortTime = new Date(ts || 0).getTime();
+                if (horaSubidaStr && horaSubidaStr !== '—') {
+                    if (horaSubidaStr.indexOf(',') >= 0) {
+                        const d = new Date(horaSubidaStr);
+                        if (!isNaN(d.getTime())) sortTime = d.getTime();
+                    } else if (/^\d{1,2}:\d{2}/.test(horaSubidaStr)) {
+                        const d = new Date(fecha + 'T' + horaSubidaStr.replace(/\./g, ':'));
+                        if (!isNaN(d.getTime())) sortTime = d.getTime();
+                    }
+                }
+                // Hora subida = momento local en que se subió (no la fecha del registro)
+                const displayHoraSubida = info.horaSubida || '—';
                 filasTabla.push({
                     fecha,
                     ensayoNum: info.ensayoNum,
@@ -243,10 +265,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     estado: textoEstado,
                     claseEstado,
                     detalleMsg,
-                    horaSubida: info.horaSubida || '—'
+                    horaSubida: displayHoraSubida,
+                    timestamp: info.timestamp || '',
+                    sortTime
                 });
             });
         });
+
+        // Ordenar filas por hora de subida: más reciente primero
+        filasTabla.sort((a, b) => (b.sortTime || 0) - (a.sortTime || 0));
 
         // Paginación: 8 por página
         const totalFilas = filasTabla.length;
@@ -1221,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const arr = sectionKey && datosPacking[sectionKey];
             if (!arr || !Array.isArray(arr) || index < 0 || index >= arr.length) return;
             arr.splice(index, 1);
-            renderAllPackingRows();
+        renderAllPackingRows();
             actualizarTodosContadoresPacking();
         });
     }
@@ -2877,16 +2904,7 @@ document.addEventListener('DOMContentLoaded', () => {
             for (const c of campos) {
                 const v = (document.getElementById(c.id) && document.getElementById(c.id).value || '').trim();
                 valores[c.id] = v;
-                if (v === '') {
-                    Swal.fire({
-                        title: 'Campo obligatorio',
-                        text: `Debes completar todos los campos de temperatura. Falta: ${c.label}.`,
-                        icon: 'warning',
-                        confirmButtonColor: '#2f7cc0'
-                    });
-                    return;
-                }
-                if (!esNumeroNoNegativo(v)) {
+                if (v !== '' && !esNumeroNoNegativo(v)) {
                     Swal.fire({
                         title: 'Valor inválido',
                         text: `${c.label}: solo números positivos o cero (sin negativos ni letras).`,
@@ -3010,19 +3028,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const ids = ['reg_humedad_inicio', 'reg_humedad_termino', 'reg_humedad_llegada', 'reg_humedad_despacho'];
-            const labels = ['Humedad inicio', 'Humedad término', 'Humedad llegada', 'Humedad despacho'];
             const vals = ids.map(id => (document.getElementById(id) && document.getElementById(id).value || '').trim());
             for (let i = 0; i < ids.length; i++) {
-                if (vals[i] === '') {
-                    Swal.fire({
-                        title: 'Campo obligatorio',
-                        text: `Todos los campos de humedad deben estar llenos. Falta: ${labels[i]}.`,
-                        icon: 'warning',
-                        confirmButtonColor: '#2f7cc0'
-                    });
-                    return;
-                }
-                if (!esNumeroNoNegativo(vals[i])) {
+                if (vals[i] !== '' && !esNumeroNoNegativo(vals[i])) {
                     Swal.fire({
                         title: 'Valor inválido',
                         text: 'Humedad: solo números positivos o cero (sin negativos ni letras).',
@@ -3076,16 +3084,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const ids = ['reg_presion_amb_inicio', 'reg_presion_amb_termino', 'reg_presion_amb_llegada', 'reg_presion_amb_despacho'];
             const vals = ids.map(id => (document.getElementById(id) && document.getElementById(id).value || '').trim());
             for (let i = 0; i < ids.length; i++) {
-                if (vals[i] === '') {
-                    Swal.fire({
-                        title: 'Campo obligatorio',
-                        text: 'Todos los campos de presión ambiente deben estar llenos (sin negativos ni letras).',
-                        icon: 'warning',
-                        confirmButtonColor: '#2f7cc0'
-                    });
-                    return;
-                }
-                if (!esNumeroNoNegativo(vals[i])) {
+                if (vals[i] !== '' && !esNumeroNoNegativo(vals[i])) {
                     Swal.fire({
                         title: 'Valor inválido',
                         text: 'Presión ambiente: solo números positivos o cero (sin negativos ni letras).',
@@ -3139,16 +3138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const ids = ['reg_presion_fruta_inicio', 'reg_presion_fruta_termino', 'reg_presion_fruta_llegada', 'reg_presion_fruta_despacho'];
             const vals = ids.map(id => (document.getElementById(id) && document.getElementById(id).value || '').trim());
             for (let i = 0; i < ids.length; i++) {
-                if (vals[i] === '') {
-                    Swal.fire({
-                        title: 'Campo obligatorio',
-                        text: 'Todos los campos de presión fruta deben estar llenos (sin negativos ni letras).',
-                        icon: 'warning',
-                        confirmButtonColor: '#2f7cc0'
-                    });
-                    return;
-                }
-                if (!esNumeroNoNegativo(vals[i])) {
+                if (vals[i] !== '' && !esNumeroNoNegativo(vals[i])) {
                     Swal.fire({
                         title: 'Valor inválido',
                         text: 'Presión fruta: solo números positivos o cero (sin negativos ni letras).',
@@ -3281,49 +3271,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Persistir la cabecera del ensayo actual (el que está seleccionado en el rótulo) antes de armar filas
             if (rotuloSeleccionado) guardarFormHeaderEnEnsayo(rotuloSeleccionado);
 
-            // Validar consistencia de filas (EXCEPTO jarras) para CADA ensayo a incluir
-            const secciones = ['temperaturas', 'tiempos', 'humedad', 'presionambiente', 'presionfruta', 'observacion'];
-            const nombresSeccion = { temperaturas: 'Temperaturas', tiempos: 'Tiempos', humedad: 'Humedad', presionambiente: 'Presión ambiente', presionfruta: 'Presión fruta', observacion: 'Observación' };
-            for (let numE of ensayosAIncluir) {
-                const ensayoData = datosDelTipo[numE];
-                const totalVisual = ensayoData.visual.length;
-                for (let seccion of secciones) {
-                    if (ensayoData[seccion] && ensayoData[seccion].length > 0 && ensayoData[seccion].length !== totalVisual) {
-                        Swal.fire({
-                            title: 'Inconsistencia de filas',
-                            html: `El <strong>Ensayo ${numE}</strong> tiene <strong>${totalVisual}</strong> filas en Visual, pero <strong>${ensayoData[seccion].length}</strong> en ${nombresSeccion[seccion] || seccion}.<br><br>Las filas deben coincidir en total (Jarras puede tener más o menos).`,
-                            icon: 'error',
-                            confirmButtonColor: '#d33'
-                        });
-                        toggleSaving(false);
-                        return;
-                    }
-                }
-            }
-
-            // Antes de registrar (solo con internet): comprobar si algún ensayo ya existe para su fecha
-            if (navigator.onLine) {
-                try {
-                    for (let numE of ensayosAIncluir) {
-                        const header = datosEnsayos.visual[numE] && datosEnsayos.visual[numE].formHeader;
-                        const fechaEnsayo = (header && header.fecha) ? String(header.fecha).trim() : '';
-                        if (fechaEnsayo) {
-                            const resExiste = await existeRegistroFechaEnsayo(fechaEnsayo, numE);
-                            if (resExiste.ok && resExiste.existe) {
-                                Swal.fire({
-                                    title: 'Ya registrado',
-                                    html: 'El <strong>Ensayo ' + numE + '</strong> ya está registrado para la fecha ' + fechaEnsayo + '. Cambia la fecha de ese ensayo o no lo incluyas.',
-                                    icon: 'info',
-                                    confirmButtonColor: '#2f7cc0'
-                                });
-                                toggleSaving(false);
-                                return;
-                            }
-                        }
-                    }
-                } catch (_) {}
-            }
-
             // Construir filas planas de 50 columnas: UNA fila por cada registro del ensayo seleccionado (todas las filas en orden)
             const allRows = [];
             
@@ -3415,8 +3362,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const nJarraNum = (j) => parseInt(j.jarra) || 0;
                         ensayo.jarras.forEach(jarra => {
                             const nJarra = nJarraNum(jarra);
-                            const esC = jarra.tipo === 'C';
-                            const esT = jarra.tipo === 'T';
+                                const esC = jarra.tipo === 'C';
+                                const esT = jarra.tipo === 'T';
                             const existente = registrosCombinados.find(r => r.n_jarra === nJarra);
                             if (!existente) {
                                 registrosCombinados.push({
@@ -3512,24 +3459,327 @@ document.addEventListener('DOMContentLoaded', () => {
             if (allRows.length > 1) console.log('[GUARDAR REGISTRO] Última fila (52 cols):', allRows[allRows.length - 1]);
 
             try {
-                lastSaveAt = Date.now();
-                saveLocal({ rows: allRows });
-                updateUI();
-                window.formHasChanges = false;
-                if (typeof renderHistorial === 'function') renderHistorial(false);
+                toggleSaving(false);
+
+                const generarPDF = () => {
+                    if (!window.jspdf) {
+                        if (typeof Swal !== 'undefined') Swal.fire({
+                            title: 'PDF no disponible',
+                            html: 'La librería para generar el PDF no está cargada.<br><br><strong>Con internet:</strong> recarga la página.<br><strong>Sin internet:</strong> descarga <code>jspdf.umd.min.js</code> (versión 2.5.1) y colócala en la carpeta <code>librerias/</code> de la aplicación; así el PDF funcionará también offline.',
+                            icon: 'warning',
+                            confirmButtonColor: '#2f7cc0'
+                        });
+                        return null;
+                    }
+                    try {
+                        const { jsPDF } = window.jspdf;
+                        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                        const pageW = doc.internal.pageSize.getWidth();
+                        const pageH = doc.internal.pageSize.getHeight();
+                        const contentWidth = 180;
+                        const margin = (pageW - contentWidth) / 2;
+                        let y = 6;
+                        const fontSize = 9;
+                        const r0 = allRows[0] || [];
+                        const fundoLabel = (r0[10] || 'C5-C6-A9-LN').toString().toUpperCase().replace(/\b\w/g, l => l.toUpperCase());
+                        const trazabilidadStr = [r0[7], r0[8], r0[9]].filter(Boolean).length ? 'E' + (r0[7] || '') + '-C' + (r0[8] || '') + (r0[9] ? '-' + r0[9] : '') : (r0[7] || '') + '/' + (r0[8] || '');
+
+                        doc.setDrawColor(0, 0, 0);
+                        doc.setLineWidth(0.3);
+                        const headerH = 18;
+                        const headerLeftW = 36;
+                        const headerRightW = 36;
+                        const headerCenterW = contentWidth - headerLeftW - headerRightW;
+                        doc.rect(margin, y, headerLeftW, headerH);
+                        doc.setFontSize(10);
+                        doc.setFont(undefined, 'bold');
+                        doc.text('AGROVISION', margin + headerLeftW / 2, y + headerH / 2 + 1.5, { align: 'center' });
+                        doc.rect(margin + headerLeftW, y, headerCenterW, headerH);
+                        const tituloEncabezado = 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN COSECHA ARÁNDANO- C5-C6-A9-LN';
+                        const anchoTitulo = headerCenterW - 4;
+                        doc.setFontSize(7);
+                        const lineasTitulo = doc.splitTextToSize(tituloEncabezado, anchoTitulo);
+                        const tituloY = y + (headerH - (lineasTitulo.length * 3.5)) / 2 + 2.5;
+                        lineasTitulo.forEach((line, i) => {
+                            doc.text(line, margin + headerLeftW + headerCenterW / 2, tituloY + i * 3.5, { align: 'center' });
+                        });
+                        doc.rect(margin + headerLeftW + headerCenterW, y, headerRightW, headerH);
+                        doc.setFont(undefined, 'normal');
+                        doc.setFontSize(8);
+                        doc.text('Código: PE-F-QPH-306', margin + contentWidth - headerRightW + 2, y + 5, { align: 'left' });
+                        doc.text('Versión: 1', margin + contentWidth - headerRightW + 2, y + 9.5, { align: 'left' });
+                        const genStr = (function() {
+                            const now = new Date();
+                            return 'Generado: ' + now.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+                        })();
+                        doc.setFontSize(6);
+                        doc.text(genStr, margin + contentWidth - headerRightW + 2, y + 14.5, { align: 'left' });
+                        y += headerH + 3;
+
+                        doc.setDrawColor(0, 0, 0);
+                        doc.setLineWidth(0.2);
+                        const blockH = 43;
+                        doc.rect(margin, y, contentWidth, blockH);
+                        y += 3;
+                        const bullet = '\u2022';
+                        doc.setFontSize(8);
+                        doc.setFont(undefined, 'bold');
+                        doc.text('Datos del registro', margin + contentWidth / 2, y, { align: 'center' });
+                        y += 5;
+                        doc.setFont(undefined, 'normal');
+                        const camposPDF = [
+                            { label: 'Tipo de Medición', value: 'Calibrado Visual' },
+                            { label: 'Rótulo de Muestra', value: String(r0[13] || '') },
+                            { label: 'Fecha', value: String(r0[0] || '') },
+                            { label: 'Responsable', value: String(r0[1] || '') },
+                            { label: 'Trazabilidad', value: trazabilidadStr },
+                            { label: 'Guía Remisión Acopio', value: String(r0[2] || '') },
+                            { label: 'Variedad', value: String(r0[3] || '') },
+                            { label: 'Placa Vehículo', value: String(r0[4] || '') },
+                            { label: 'Hora Inicio General', value: String(r0[5] || '') },
+                            { label: 'Días Precosecha / N°', value: String(r0[6] || '') },
+                            { label: 'Fundo', value: String(r0[10] || '') },
+                            { label: 'Observación', value: String(r0[11] || '').substring(0, 45) }
+                        ];
+                        const colW = contentWidth / 2;
+                        const leftX = margin + 3;
+                        const rightX = margin + colW + 3;
+                        const rowH = 5.2;
+                        for (let i = 0; i < camposPDF.length; i += 2) {
+                            const c0 = camposPDF[i];
+                            const c1 = camposPDF[i + 1];
+                            doc.setFont(undefined, 'normal');
+                            doc.text(bullet + ' ' + c0.label + ': ', leftX, y);
+                            doc.setFont(undefined, 'bold');
+                            doc.text((c0.value || '\u2014'), leftX + doc.getTextWidth(bullet + ' ' + c0.label + ': '), y);
+                            if (c1) {
+                                doc.setFont(undefined, 'normal');
+                                doc.text(bullet + ' ' + c1.label + ': ', rightX, y);
+                                doc.setFont(undefined, 'bold');
+                                doc.text((c1.value || '\u2014'), rightX + doc.getTextWidth(bullet + ' ' + c1.label + ': '), y);
+                            }
+                            y += rowH;
+                        }
+                        y += 5;
+
+                        doc.setDrawColor(0, 0, 0);
+                        doc.setLineWidth(0.4);
+                        const lineH = 6;
+                        const yMax = 268;
+
+                        const drawTable = (titulo, headers, indices, rows, maxLen) => {
+                            const dataRows = (rows || allRows).slice(0, 15);
+                            const totalTableH = (1 + dataRows.length) * lineH;
+                            const sectionH = 5 + 4 + totalTableH + 4;
+                            if (y + sectionH > yMax) {
+                                doc.addPage();
+                                y = 10;
+                            }
+                            y += 5;
+                            doc.setFontSize(fontSize);
+                            doc.setFont(undefined, 'bold');
+                            doc.text(titulo, margin, y, { align: 'left' });
+                            y += 4;
+                            doc.setFont(undefined, 'normal');
+                            const nCol = headers.length;
+                            const tableColW = contentWidth / Math.max(nCol, 1);
+                            const totalH = (1 + dataRows.length) * lineH;
+                            const startY = y;
+                            doc.rect(margin, startY, contentWidth, totalH);
+                            for (let c = 1; c < nCol; c++) doc.line(margin + c * tableColW, startY, margin + c * tableColW, startY + totalH);
+                            for (let r = 0; r <= dataRows.length + 1; r++) doc.line(margin, startY + r * lineH, margin + contentWidth, startY + r * lineH);
+                            const headerFont = nCol >= 8 ? 5.5 : (nCol > 6 ? 6 : 7);
+                            doc.setFontSize(headerFont);
+                            headers.forEach((h, i) => doc.text(h, margin + i * tableColW + tableColW / 2, startY + lineH / 2 + 1.2, { align: 'center' }));
+                            const cellFont = nCol >= 8 ? 7 : (nCol > 6 ? 7 : 8);
+                            doc.setFontSize(cellFont);
+                            y = startY + lineH;
+                            dataRows.forEach((row, rowIdx) => {
+                                indices.forEach((idx, i) => {
+                                    const isItemCol = (headers[0] === 'ITEM' && i === 0);
+                                    const val = isItemCol ? String(rowIdx + 1) : String(row[idx] ?? '');
+                                    const len = (maxLen && maxLen[i] !== undefined) ? maxLen[i] : (nCol === 1 ? 50 : 12);
+                                    doc.text(val.substring(0, len), margin + i * tableColW + tableColW / 2, y + lineH / 2 + 1.2, { align: 'center' });
+                                });
+                                y += lineH;
+                            });
+                            doc.setFontSize(fontSize);
+                            y += 4;
+                        };
+
+                        drawTable('1. Tiempo de llenado de jarras (hora)', ['ITEM', 'N° JARRA', 'INICIO COSECHA', 'TÉRMINO COSECHA', 'TIEMPO (min)', 'INICIO TRASLADO', 'TÉRMINO TRASLADO', 'TIEMPO TRASL. (min)'], [14, 15, 20, 21, 22, 23, 24, 25], allRows);
+                        drawTable('2. Entrada de pesos: Visual', ['N° CLAM', 'N° JARRA', 'PESO 1 (g)', 'PESO 2 (g)', 'LLEGADA ACOPIO (g)', 'DESPACHO ACOPIO (g)'], [14, 15, 16, 17, 18, 19], allRows);
+                        drawTable('3. Tiempos de la muestra (hora)', ['N° CLAM', 'INICIO COSECHA', 'PÉRDIDA PESO', 'TÉRMINO COSECHA', 'LLEGADA ACOPIO', 'DESPACHO ACOPIO'], [14, 34, 35, 36, 37, 38], allRows);
+                        drawTable('4. Temperatura muestra (°C)', ['N° CLAM', 'INICIO AMB.', 'INICIO PULPA', 'TÉRMINO AMB.', 'TÉRMINO PULPA', 'LLEGADA AMB.', 'LLEGADA PULPA', 'DESP. AMB.', 'DESP. PULPA'], [14, 26, 27, 28, 29, 30, 31, 32, 33], allRows);
+                        drawTable('5. Humedad relativa (%)', ['N° CLAM', 'INICIO', 'TÉRMINO', 'LLEGADA ACOPIO', 'DESPACHO ACOPIO'], [14, 39, 40, 41, 42], allRows);
+                        drawTable('6. Presión de vapor ambiente (Kpa)', ['N° CLAM', 'INICIO', 'TÉRMINO', 'LLEGADA ACOPIO', 'DESPACHO ACOPIO'], [14, 43, 44, 45, 46], allRows);
+                        drawTable('7. Presión de vapor fruta (Kpa)', ['N° CLAM', 'INICIO', 'TÉRMINO', 'LLEGADA ACOPIO', 'DESPACHO ACOPIO'], [14, 47, 48, 49, 50], allRows);
+                        drawTable('8. Observaciones por muestra', ['N° CLAM', 'DETALLE DE LA OBSERVACIÓN'], [14, 51], allRows, [8, 45]);
+
+                        const nombreArchivo = 'MTTP_Registro_' + (r0[0] || 'fecha') + '_Ensayo' + (ensayosAIncluir.join('-')) + '.pdf';
+                        const blob = doc.output('blob');
+                        return { blobUrl: URL.createObjectURL(blob), nombreArchivo };
+                    } catch (e) {
+                        console.error(e);
+                        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error', text: 'No se pudo generar el PDF.', icon: 'error' });
+                        return null;
+                    }
+                };
 
                 Swal.fire({
-                    title: '¡Registro Guardado!',
-                    html: 'Se guardaron <strong>' + allRows.length + '</strong> filas de <strong>' + ensayosAIncluir.length + '</strong> ensayo(s) (Ensayo ' + ensayosAIncluir.join(', Ensayo ') + ').<br><small>Se enviarán al servidor cuando haya conexión.</small>',
-                    icon: 'success',
+                    title: '¿Qué deseas hacer?',
+                    html: 'Se van a guardar <strong>' + allRows.length + '</strong> filas de <strong>' + ensayosAIncluir.length + '</strong> ensayo(s) (Ensayo ' + ensayosAIncluir.join(', Ensayo ') + ').<br><br>' +
+                        '• <strong>Guardar</strong>: guarda el registro (y se enviará al servidor cuando haya conexión).<br>' +
+                        '• <strong>Ver PDF</strong>: abre una vista previa del PDF; ahí puedes descargarlo o cerrar.<br>' +
+                        '• <strong>Cancelar</strong>: no guarda; puedes seguir editando.',
+                    icon: 'question',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: 'Guardar',
+                    denyButtonText: 'Ver PDF',
+                    cancelButtonText: 'Cancelar',
                     confirmButtonColor: '#2f7cc0',
-                    confirmButtonText: 'Entendido'
-                }).then(() => {
+                    denyButtonColor: '#28a745',
+                    cancelButtonColor: '#6c757d'
+                }).then(async (result) => {
+                    if (result.isConfirmed) {
+                        Swal.close();
+                        toggleSaving(true);
+                        const secciones = ['temperaturas', 'tiempos', 'humedad', 'presionambiente', 'presionfruta', 'observacion'];
+                        const nombresSeccion = { temperaturas: 'Temperaturas', tiempos: 'Tiempos', humedad: 'Humedad', presionambiente: 'Presión ambiente', presionfruta: 'Presión fruta', observacion: 'Observación' };
+                        for (let numE of ensayosAIncluir) {
+                            const ensayoData = datosDelTipo[numE];
+                            const totalVisual = ensayoData.visual.length;
+                            for (let seccion of secciones) {
+                                if (ensayoData[seccion] && ensayoData[seccion].length > 0 && ensayoData[seccion].length !== totalVisual) {
+                                    toggleSaving(false);
+                                    await Swal.fire({
+                                        title: 'Inconsistencia de filas',
+                                        html: `El <strong>Ensayo ${numE}</strong> tiene <strong>${totalVisual}</strong> filas en Visual, pero <strong>${ensayoData[seccion].length}</strong> en ${nombresSeccion[seccion] || seccion}.<br><br>Las filas deben coincidir en total (Jarras puede tener más o menos).`,
+                                        icon: 'error',
+                                        confirmButtonColor: '#d33'
+                                    });
+                                    return;
+                                }
+                            }
+                        }
+                        let rowsToSave = allRows;
+                        let duplicadosExcluidos = [];
+                        if (navigator.onLine) {
+                            try {
+                                const duplicados = [];
+                                for (let numE of ensayosAIncluir) {
+                                    const header = datosEnsayos.visual[numE] && datosEnsayos.visual[numE].formHeader;
+                                    const fechaEnsayo = (header && header.fecha) ? String(header.fecha).trim() : '';
+                                    if (fechaEnsayo) {
+                                        const resExiste = await existeRegistroFechaEnsayo(fechaEnsayo, numE);
+                                        if (resExiste.ok && resExiste.existe) duplicados.push({ fecha: fechaEnsayo, numE });
+                                    }
+                                }
+                                if (duplicados.length > 0) {
+                                    const msg = duplicados.length === 1
+                                        ? 'El <strong>Ensayo ' + duplicados[0].numE + '</strong> ya está registrado para la fecha ' + duplicados[0].fecha + '.'
+                                        : 'Los ensayos <strong>' + duplicados.map(d => d.numE).join(', ') + '</strong> ya están registrados para su fecha.';
+                                    const resultDup = await Swal.fire({
+                                        title: 'Ya registrado',
+                                        html: msg + '<br><br>¿Guardar solo los que no se repiten?',
+                                        icon: 'info',
+                                        showCancelButton: true,
+                                        confirmButtonText: 'Considerar solo las que no se repiten',
+                                        cancelButtonText: 'OK',
+                                        confirmButtonColor: '#2f7cc0',
+                                        cancelButtonColor: '#6c757d'
+                                    });
+                                    if (!resultDup.isConfirmed) {
+                                        toggleSaving(false);
+                                        return;
+                                    }
+                                    const duplicateSet = new Set(duplicados.map(d => d.fecha + '|' + d.numE));
+                                    rowsToSave = allRows.filter(row => !duplicateSet.has(String(row[0] || '').trim() + '|' + row[12]));
+                                    duplicadosExcluidos = [...duplicados];
+                                    if (rowsToSave.length === 0) {
+                                        toggleSaving(false);
+                                        await Swal.fire({
+                                            title: 'Sin registros',
+                                            text: 'No hay registros para guardar (todos están ya registrados).',
+                                            icon: 'info',
+                                            confirmButtonColor: '#2f7cc0'
+                                        });
+                                        return;
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+                        Swal.fire({
+                            title: 'Se está guardando...',
+                            text: 'Un momento por favor.',
+                            allowOutsideClick: false,
+                            allowEscapeKey: false,
+                            didOpen: () => { Swal.showLoading(); }
+                        });
+                lastSaveAt = Date.now();
+                        const uid = saveLocal({ rows: rowsToSave });
+                        const esperarHastaRegistrado = (id, maxMs) => new Promise((resolve) => {
+                            const start = Date.now();
+                            const check = () => {
+                                const items = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                                const item = items.find(i => i.uid === id);
+                                if (!item || item.status !== 'pendiente' || (Date.now() - start >= maxMs)) {
+                                    resolve();
+                                    return;
+                                }
+                                setTimeout(check, 350);
+                            };
+                            check();
+                        });
+                        if (uid) await esperarHastaRegistrado(uid, 14000);
+                        if (duplicadosExcluidos.length > 0) {
+                            const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                            const timestamp = new Date().toLocaleString();
+                            duplicadosExcluidos.forEach(d => {
+                                const rowsForD = allRows.filter(r => String(r[0] || '').trim() === d.fecha && r[12] === d.numE);
+                                if (rowsForD.length) {
+                                    current.push({
+                                        uid: 'REG-' + Date.now() + '-' + d.fecha + '-' + d.numE + '-' + Math.random().toString(36).substr(2, 4),
+                                        timestamp,
+                                        rows: rowsForD,
+                                        status: 'rechazado_duplicado',
+                                        rechazoMotivo: 'No se guardó porque ya estaba registrado (se eligió guardar solo los no repetidos).'
+                                    });
+                                }
+                            });
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+                updateUI();
+                        }
+                window.formHasChanges = false;
+                if (typeof renderHistorial === 'function') renderHistorial(false);
                     document.getElementById('cosecha-form').reset();
                     if (campoFecha) campoFecha.value = fechaLocalHoy();
                     window.location.reload();
-                }).finally(() => {
-                    toggleSaving(false);
+                    } else if (result.isDenied) {
+                        const pdfResult = generarPDF();
+                        if (pdfResult && pdfResult.blobUrl) {
+                            Swal.fire({
+                                title: 'Vista previa del PDF',
+                                html: '<iframe src="' + pdfResult.blobUrl + '" style="width:100%;height:70vh;border:1px solid #ddd;border-radius:4px"></iframe>',
+                                width: 920,
+                                showConfirmButton: false,
+                                showDenyButton: true,
+                                denyButtonText: 'Descargar PDF',
+                                showCancelButton: true,
+                                cancelButtonText: 'Cerrar',
+                                denyButtonColor: '#28a745',
+                                cancelButtonColor: '#6c757d'
+                            }).then((r) => {
+                                if (r.isDenied) {
+                                    const a = document.createElement('a');
+                                    a.href = pdfResult.blobUrl;
+                                    a.download = pdfResult.nombreArchivo;
+                                    a.click();
+                                }
+                            });
+                        }
+                    }
                 });
             } catch (err) {
                 toggleSaving(false);
