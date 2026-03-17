@@ -202,8 +202,11 @@
                                         <td class="b-left">
                                             <span id="next_row_jarras">1</span> 
                                         </td>
-                                        <td>
-                                            <input type="number" id="reg_jarras_n_jarra" name="reg_jarras_n_jarra" placeholder="ID Jarra" inputmode="numeric" min="1" step="1">
+                                        <td id="td_jarras_n_jarra">
+                                            <select id="reg_jarras_n_jarra" name="reg_jarras_n_jarra" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">
+                                                <option value="">Selecciona...</option>
+                                                <option value="1">1</option>
+                                            </select>
                                         </td>
                                         <td>
                                             <select id="reg_jarras_tipo" name="reg_jarras_tipo" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
@@ -612,6 +615,18 @@
                 <!-- Bloque 2: Datos de la hoja (solo visualización) -->
                 <section id="packing_datos_section" class="form-group datos-cargados-solo-lectura">
                     <p class="view-only-hint" style="margin: 0 0 12px 0; font-size: 0.85rem; color: #555;"><i data-lucide="info"></i> Datos de la hoja: solo visualización. Se usarán al agregar registros en Packing.</p>
+
+                    <div class="row">
+                        <div class="col">
+                            <label><i data-lucide="calendar"></i> Fecha Inspección</label> 
+                            <input type="date" id="view_fecha_inspeccion" name="view_fecha_inspeccion">
+                        </div>
+                        <div class="col">
+                            <label><i data-lucide="user"></i> Responsable</label>
+                            <input type="text" id="view_responsable" name="view_responsable" placeholder="Nombre del responsable">
+                        </div>
+                    </div>
+
                     <div class="row">
                         <div class="col">
                             <label><i data-lucide="clock"></i> Hora Inicio Recepción</label>
@@ -763,11 +778,11 @@
                                     <tbody>
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_pesos">1</span></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_recepcion" name="reg_packing_peso_recepcion" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_ingreso_gasificado" name="reg_packing_peso_ingreso_gasificado" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_salida_gasificado" name="reg_packing_peso_salida_gasificado" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_ingreso_prefrio" name="reg_packing_peso_ingreso_prefrio" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_salida_prefrio" name="reg_packing_peso_salida_prefrio" placeholder="0.0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_recepcion" name="reg_packing_peso_recepcion" placeholder="0.0" title="gramos (g)"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_ingreso_gasificado" name="reg_packing_peso_ingreso_gasificado" placeholder="0.0" title="gramos (g)"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_salida_gasificado" name="reg_packing_peso_salida_gasificado" placeholder="0.0" title="gramos (g)"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_ingreso_prefrio" name="reg_packing_peso_ingreso_prefrio" placeholder="0.0" title="gramos (g)"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_peso_salida_prefrio" name="reg_packing_peso_salida_prefrio" placeholder="0.0" title="gramos (g)"></td>
                                             <td class="b-right">
                                                 <button type="button" id="btn-add-pesos" class="btn-mini-add">
                                                     <i data-lucide="plus"></i>
@@ -822,17 +837,17 @@
                                     <tbody>
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing_temp">1</span></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_recepcion" name="reg_packing_temp_amb_recepcion"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_recepcion" name="reg_packing_temp_pulp_recepcion"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_ingreso_gas" name="reg_packing_temp_amb_ingreso_gas"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_ingreso_gas" name="reg_packing_temp_pulp_ingreso_gas"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_salida_gas" name="reg_packing_temp_amb_salida_gas"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_salida_gas" name="reg_packing_temp_pulp_salida_gas"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_ingreso_pre" name="reg_packing_temp_amb_ingreso_pre"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_ingreso_pre" name="reg_packing_temp_pulp_ingreso_pre"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_salida_pre" name="reg_packing_temp_amb_salida_pre"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_salida_pre" name="reg_packing_temp_pulp_salida_pre"></td>
-                                            
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_recepcion" name="reg_packing_temp_amb_recepcion" placeholder="0.0" title="°C"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_recepcion" name="reg_packing_temp_pulp_recepcion" placeholder="0.0" title="°C"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_ingreso_gas" name="reg_packing_temp_amb_ingreso_gas" placeholder="0.0" step="0.1" min="0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_ingreso_gas" name="reg_packing_temp_pulp_ingreso_gas" placeholder="0.0" step="0.1" min="0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_salida_gas" name="reg_packing_temp_amb_salida_gas" placeholder="0.0" step="0.1" min="0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_salida_gas" name="reg_packing_temp_pulp_salida_gas" placeholder="0.0" step="0.1" min="0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_ingreso_pre" name="reg_packing_temp_amb_ingreso_pre" placeholder="0.0" step="0.1" min="0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_ingreso_pre" name="reg_packing_temp_pulp_ingreso_pre" placeholder="0.0" step="0.1" min="0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_salida_pre" name="reg_packing_temp_amb_salida_pre" placeholder="0.0" step="0.1" min="0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_salida_pre" name="reg_packing_temp_pulp_salida_pre" placeholder="0.0" step="0.1" min="0"></td>
+
                                             <td class="b-right">
                                                 <button type="button" id="btn-add-temp" class="btn-mini-add">
                                                     <i data-lucide="plus"></i>
@@ -875,11 +890,11 @@
                                     <tbody>
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing_humedad">1</span></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_recepcion" name="reg_packing_humedad_recepcion" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_ingreso_gasificado" name="reg_packing_humedad_ingreso_gasificado" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_salida_gasificado" name="reg_packing_humedad_salida_gasificado" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_ingreso_prefrio" name="reg_packing_humedad_ingreso_prefrio" placeholder="0.0"></td>
-                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_salida_prefrio" name="reg_packing_humedad_salida_prefrio" placeholder="0.0"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_recepcion" name="reg_packing_humedad_recepcion" placeholder="0.0" title="%"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_ingreso_gasificado" name="reg_packing_humedad_ingreso_gasificado" placeholder="0.0" title="%"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_salida_gasificado" name="reg_packing_humedad_salida_gasificado" placeholder="0.0" title="%"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_ingreso_prefrio" name="reg_packing_humedad_ingreso_prefrio" placeholder="0.0" title="%"></td>
+                                            <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_salida_prefrio" name="reg_packing_humedad_salida_prefrio" placeholder="0.0" title="%"></td>
                                             <td class="b-right">
                                                 <button type="button" id="btn-add-packing-humedad" class="btn-mini-add">
                                                     <i data-lucide="plus"></i>
@@ -982,53 +997,6 @@
                                         </tr>
                                     </tbody>
                                     <tbody id="tbody-packing-presion-fruta">
-                                        </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="wrapper_packing_7" class="collapsible-wrapper">
-                    <div class="collapsible-card">
-                        <div class="card-header collapsible-toggle" data-target="body-packing-7">
-                            <div class="header-info">
-                                <i data-lucide="cloud-rain"></i>
-                                <span>DÉFICIT DE PRESIÓN DE VAPOR (Kpa)</span>
-                            </div>
-                            <i data-lucide="chevron-down" class="chevron"></i>
-                        </div>
-
-                        <div class="card-body" id="body-packing-7">
-                            <div class="table-scroll">
-                                <table class="table-field-style">
-                                    <thead>
-                                        <tr>
-                                            <th class="b-left">N°</th>
-                                            <th title="Déficit Recepción"><i data-lucide="download"></i><br>RECEP.</th>
-                                            <th title="Déficit Ingreso Gasificado"><i data-lucide="log-in"></i><br>IN. GAS.</th>
-                                            <th title="Déficit Salida Gasificado"><i data-lucide="log-out"></i><br>OUT GAS.</th>
-                                            <th title="Déficit Ingreso Prefrío"><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th>
-                                            <th title="Déficit Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>OUT PRE.</th>
-                                            <th class="b-right">ACCION</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr class="input-table-row">
-                                            <td class="b-left"><span id="next_clam_deficit">1</span></td>
-                                            <td><input type="number" step="0.001" min="0" id="reg_packing_deficit_recepcion" name="reg_packing_deficit_recepcion" placeholder="0.000"></td>
-                                            <td><input type="number" step="0.001" min="0" id="reg_packing_deficit_ingreso_gasificado" name="reg_packing_deficit_ingreso_gasificado" placeholder="0.000"></td>
-                                            <td><input type="number" step="0.001" min="0" id="reg_packing_deficit_salida_gasificado" name="reg_packing_deficit_salida_gasificado" placeholder="0.000"></td>
-                                            <td><input type="number" step="0.001" min="0" id="reg_packing_deficit_ingreso_prefrio" name="reg_packing_deficit_ingreso_prefrio" placeholder="0.000"></td>
-                                            <td><input type="number" step="0.001" min="0" id="reg_packing_deficit_salida_prefrio" name="reg_packing_deficit_salida_prefrio" placeholder="0.000"></td>
-                                            <td class="b-right">
-                                                <button type="button" id="btn-add-deficit" class="btn-mini-add">
-                                                    <i data-lucide="plus"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                    <tbody id="tbody-packing-deficit">
                                         </tbody>
                                 </table>
                             </div>
@@ -1180,8 +1148,8 @@
             }
         });
 
-        // Service Worker solo en producción (evita errores con Live Server)
-        if ('serviceWorker' in navigator && !window.location.hostname.match(/127\.0\.0\.1|localhost/)) {
+        // Service Worker: local (127.0.0.1:5500) y producción (Netlify). Misma caché offline en ambos.
+        if ('serviceWorker' in navigator && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
             navigator.serviceWorker.register('./service-worker.js').catch(() => {});
         }
     </script>

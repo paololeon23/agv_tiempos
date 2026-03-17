@@ -1,10 +1,19 @@
-import { saveLocal, updateUI, getDatosPacking, getEnsayosPorFecha, existeRegistroFechaEnsayo, getListadoRegistrados, getPackingCache, postPacking, STORAGE_KEY } from './network.js';
+import { saveLocal, updateUI, getDatosPacking, getEnsayosPorFecha, existeRegistroFechaEnsayo, getListadoRegistrados, getPackingCache, postPacking, savePackingToQueue, primeGetCache, STORAGE_KEY } from './network.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- Inicio: aviso salir, iconos ---
     window.formHasChanges = false;
     if (window.lucide) lucide.createIcons();
+
+    // Con internet: rellenar caché de GET (fechas, listado) para usarlos offline; al volver online sincronizar colas y refrescar caché
+    if (typeof primeGetCache === 'function' && typeof updateUI === 'function') {
+        primeGetCache().catch(() => {});
+        window.addEventListener('online', () => {
+            updateUI();
+            primeGetCache().catch(() => {});
+        });
+    }
 
     // --- Mapas de datos (variedades por casa) ---
     const VAR_MAP = {
@@ -460,6 +469,300 @@ document.addEventListener('DOMContentLoaded', () => {
     function tiempoMenorOIgual(t1, t2) {
         return tiempoEnMinutos(t1) <= tiempoEnMinutos(t2);
     }
+    /** Validación tiempos muestra: Inicio ≤ Pérdida ≤ Término ≤ Llegada ≤ Despacho. Cualquier hora posterior debe ser >= cualquier anterior (también si hay campos vacíos en medio). */
+    function validarTiemposMuestraOrden(data) {
+        var orden = [
+            (data.inicio || '').trim(),
+            (data.perdida || '').trim(),
+            (data.termino || '').trim(),
+            (data.llegada || '').trim(),
+            (data.despacho || '').trim()
+        ];
+        var nombres = ['Inicio', 'Pérdida', 'Término', 'Llegada', 'Despacho'];
+        for (var i = 0; i < orden.length; i++) {
+            for (var j = i + 1; j < orden.length; j++) {
+                if (orden[i] && orden[j] && !tiempoMenorOIgual(orden[i], orden[j])) {
+                    return { ok: false, msg: nombres[i] + ' ≤ ' + nombres[j] + ' (' + nombres[j] + ' debe ser mayor o igual).' };
+                }
+            }
+        }
+        return { ok: true };
+    }
+    /** Para la misma N° Jarra: término Cosecha debe ser <= inicio Traslado (Traslado nunca antes que fin de Cosecha). Traslado "1-2" aplica a jarras 1 y 2. */
+    function idsDeJarraTraslado(jarraStr) {
+        var n = (v) => (v == null || v === '') ? '' : String(v).trim();
+        var s = n(jarraStr);
+        if (s.indexOf('-') >= 0) return s.split('-').map(function (x) { return n(x); }).filter(Boolean);
+        return s ? [s] : [];
+    }
+    function validarOrdenCosechaTrasladoJarras(jarras) {
+        var norm = function (v) { return (v == null || v === '') ? '' : String(v).trim(); };
+        for (var i = 0; i < jarras.length; i++) {
+            var t = jarras[i];
+            if (t.tipo !== 'T') continue;
+            var trasladoInicio = (t.inicio || '').trim();
+            if (!trasladoInicio) continue;
+            var idsT = idsDeJarraTraslado(t.jarra);
+            for (var j = 0; j < jarras.length; j++) {
+                var c = jarras[j];
+                if (c.tipo !== 'C') continue;
+                var cJarra = norm(c.jarra);
+                if (!cJarra) continue;
+                var aplica = idsT.length === 0 ? (norm(t.jarra) === cJarra) : (idsT.indexOf(cJarra) >= 0);
+                if (!aplica) continue;
+                var cosechaTermino = (c.termino || '').trim();
+                if (!cosechaTermino) continue;
+                if (!tiempoMenorOIgual(cosechaTermino, trasladoInicio)) {
+                    return { ok: false, msg: 'El inicio de Traslado (' + trasladoInicio + ') debe ser igual o posterior al término de Cosecha (' + cosechaTermino + ') para la N° Jarra ' + cJarra + '.' };
+                }
+            }
+        }
+        return { ok: true };
+    }
+    /** Devuelve la hora TÉRMINO de Cosecha para esa jarra (o para "1-2" la más tarde de las dos). Si no hay Cosecha, devuelve ''. */
+    function getTerminoCosechaParaJarra(ensayo, jarra) {
+        if (!ensayo || !jarra || !datosEnsayos.visual || !datosEnsayos.visual[ensayo]) return '';
+        var list = datosEnsayos.visual[ensayo].jarras || [];
+        var ids = idsDeJarraTraslado(jarra);
+        if (ids.length === 0) ids = [('' + jarra).trim()].filter(Boolean);
+        var terminos = [];
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].tipo !== 'C') continue;
+            var j = ('' + (list[i].jarra || '')).trim();
+            if (ids.indexOf(j) < 0) continue;
+            var t = (list[i].termino || '').trim();
+            if (t) terminos.push(t);
+        }
+        if (terminos.length === 0) return '';
+        if (terminos.length === 1) return terminos[0];
+        terminos.sort(function (a, b) { return tiempoEnMinutos(a) - tiempoEnMinutos(b); });
+        return terminos[terminos.length - 1];
+    }
+    /** Si TIPO es Traslado y N° JARRA tiene Cosecha, rellena INICIO con el TÉRMINO de Cosecha. */
+    function llenarInicioTrasladoSegunCosecha() {
+        var tipoEl = document.getElementById('reg_jarras_tipo');
+        var jarraEl = document.getElementById('reg_jarras_n_jarra');
+        var inicioEl = document.getElementById('reg_jarras_inicio');
+        if (!tipoEl || !jarraEl || !inicioEl) return;
+        var tipo = (tipoEl.value || '').trim();
+        var jarra = (jarraEl.value || '').trim();
+        if (tipo !== 'T' || !jarra) return;
+        var terminoCosecha = getTerminoCosechaParaJarra(ensayoActual, jarra);
+        if (terminoCosecha) inicioEl.value = terminoCosecha;
+    }
+    /** IDs únicos de N° JARRA solo de filas con TIPO Cosecha (para el select de Traslado). */
+    function getJarrasCosechaIds(ensayo) {
+        if (!ensayo || !datosEnsayos.visual || !datosEnsayos.visual[ensayo]) return [];
+        var list = datosEnsayos.visual[ensayo].jarras || [];
+        var ids = [];
+        var seen = {};
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].tipo !== 'C') continue;
+            var id = (list[i].jarra != null && list[i].jarra !== '') ? String(list[i].jarra).trim() : '';
+            if (id && !seen[id]) { seen[id] = true; ids.push(id); }
+        }
+        ids.sort(function (a, b) { return (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0) || a.localeCompare(b); });
+        return ids;
+    }
+    /** Jarras que tienen Cosecha pero aún no Traslado (para poder elegir al agregar Traslado). Recorre la lista directamente para no perder ninguna. */
+    function getJarrasSinTraslado(ensayo) {
+        if (!ensayo || !datosEnsayos.visual || !datosEnsayos.visual[ensayo]) return [];
+        var list = datosEnsayos.visual[ensayo].jarras || [];
+        var conCosecha = {};
+        var conTraslado = {};
+        for (var i = 0; i < list.length; i++) {
+            var j = ('' + (list[i].jarra || '')).trim();
+            if (!j) continue;
+            if (list[i].tipo === 'C') {
+                if (j.indexOf('-') < 0) conCosecha[j] = true;
+            }
+            if (list[i].tipo === 'T') {
+                if (j.indexOf('-') >= 0) {
+                    var partes = j.split('-').map(function (x) { return (x || '').trim(); });
+                    partes.forEach(function (p) { if (p) conTraslado[p] = true; });
+                } else conTraslado[j] = true;
+            }
+        }
+        var out = [];
+        for (var k in conCosecha) { if (conCosecha[k] && !conTraslado[k]) out.push(k); }
+        out.sort(function (a, b) { return (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0); });
+        return out;
+    }
+    /** Opciones para el select N° JARRA según TIPO. Cosecha = jarras sin Cosecha + jarras sin Traslado (para poder elegir y agregar Traslado) + siguiente. Así al eliminar Traslado de 1 y 2 vuelven a salir 1 y 2. Traslado = solo jarras sin Traslado. */
+    function getOpcionesJarra(ensayo, tipo) {
+        var ids = getJarrasCosechaIds(ensayo);
+        var maxN = ids.length ? Math.max.apply(null, ids.map(function (x) { return parseInt(x, 10) || 0; })) : 0;
+        var siguiente = String(maxN + 1);
+        tipo = (tipo || '').trim();
+        if (tipo === 'C') {
+            var listC = [];
+            for (var n = 1; n <= maxN; n++) {
+                var s = String(n);
+                if (ids.indexOf(s) < 0) listC.push(s);
+            }
+            for (var i = 0; i < ids.length; i++) {
+                if (!jarraYaTieneTraslado(ensayo, ids[i]) && listC.indexOf(ids[i]) < 0) listC.push(ids[i]);
+            }
+            var sinTraslado = getJarrasSinTraslado(ensayo);
+            for (var j = 0; j < sinTraslado.length; j++) {
+                if (listC.indexOf(sinTraslado[j]) < 0) listC.push(sinTraslado[j]);
+            }
+            if (listC.indexOf(siguiente) < 0) listC.push(siguiente);
+            listC.sort(function (a, b) { return (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0); });
+            return listC;
+        }
+        if (tipo === 'T') {
+            var sinTraslado = getJarrasSinTraslado(ensayo);
+            if (sinTraslado.length === 0) return [siguiente];
+            return sinTraslado;
+        }
+        var list = getJarrasSinTraslado(ensayo).slice();
+        if (list.indexOf(siguiente) < 0) list.push(siguiente);
+        list.sort(function (a, b) { return (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0); });
+        return list;
+    }
+    /** True si esa jarra (número solo, no "1-2") ya tiene una fila Cosecha registrada. */
+    function jarraYaTieneCosecha(ensayo, jarra) {
+        if (!ensayo || !jarra || ('' + jarra).indexOf('-') >= 0) return false;
+        var list = (datosEnsayos.visual[ensayo] && datosEnsayos.visual[ensayo].jarras) ? datosEnsayos.visual[ensayo].jarras : [];
+        var n = ('' + jarra).trim();
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].tipo === 'C' && ('' + (list[i].jarra || '')).trim() === n) return true;
+        }
+        return false;
+    }
+    /** True si esa jarra ya tiene Cosecha y Traslado registrados. Traslado "1-2" cuenta como Traslado para jarra 1 y para jarra 2 (equivale a uno por uno). */
+    function jarraYaCompleta(ensayo, jarraId) {
+        if (!ensayo || jarraId == null || jarraId === '' || ('' + jarraId).indexOf('-') >= 0) return false;
+        var list = (datosEnsayos.visual[ensayo] && datosEnsayos.visual[ensayo].jarras) ? datosEnsayos.visual[ensayo].jarras : [];
+        var n = ('' + jarraId).trim();
+        var tieneC = false, tieneT = false;
+        for (var i = 0; i < list.length; i++) {
+            var j = ('' + (list[i].jarra || '')).trim();
+            if (list[i].tipo === 'C' && j === n) tieneC = true;
+            if (list[i].tipo === 'T') {
+                if (j === n) tieneT = true;
+                else if (j.indexOf('-') >= 0) {
+                    var partes = j.split('-').map(function (x) { return (x || '').trim(); });
+                    if (partes.indexOf(n) >= 0) tieneT = true;
+                }
+            }
+        }
+        return tieneC && tieneT;
+    }
+    /** True si esa jarra ya tiene al menos una fila Traslado (individual o en grupo "1-2" que la incluya). */
+    function jarraYaTieneTraslado(ensayo, jarraId) {
+        if (!ensayo || jarraId == null || jarraId === '') return false;
+        var list = (datosEnsayos.visual[ensayo] && datosEnsayos.visual[ensayo].jarras) ? datosEnsayos.visual[ensayo].jarras : [];
+        var n = ('' + jarraId).trim();
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].tipo !== 'T') continue;
+            var j = ('' + (list[i].jarra || '')).trim();
+            if (j === n) return true;
+            if (j.indexOf('-') >= 0) {
+                var partes = j.split('-').map(function (x) { return (x || '').trim(); });
+                if (partes.indexOf(n) >= 0) return true;
+            }
+        }
+        return false;
+    }
+    /** True si ya existe una fila de Traslado con ese valor grupal (ej. "1-2"). Así no se ofrece de nuevo en el desplegable. */
+    function yaExisteTrasladoGrupal(ensayo, valorGrupal) {
+        if (!ensayo || !valorGrupal || ('' + valorGrupal).indexOf('-') < 0) return false;
+        var list = (datosEnsayos.visual[ensayo] && datosEnsayos.visual[ensayo].jarras) ? datosEnsayos.visual[ensayo].jarras : [];
+        var v = ('' + valorGrupal).trim();
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].tipo === 'T' && ('' + (list[i].jarra || '')).trim() === v) return true;
+        }
+        return false;
+    }
+    /** TIPO dinámico: Cosecha siempre primero; Traslado solo si esa jarra ya tiene Cosecha (no se puede registrar Traslado antes que Cosecha). */
+    function actualizarTipoSegunJarra() {
+        var jarraEl = document.getElementById('reg_jarras_n_jarra');
+        var tipoEl = document.getElementById('reg_jarras_tipo');
+        if (!jarraEl || !tipoEl) return;
+        var valorTipoAnterior = (tipoEl.value || '').trim();
+        var jarra = (jarraEl.value || '').trim();
+        var mostrarCosecha = false;
+        var mostrarTraslado = false;
+        if (jarra) {
+            if (jarra.indexOf('-') >= 0) {
+                mostrarTraslado = true;
+            } else {
+                var yaTieneCosecha = jarraYaTieneCosecha(ensayoActual, jarra);
+                mostrarCosecha = !yaTieneCosecha;
+                mostrarTraslado = yaTieneCosecha && !jarraYaTieneTraslado(ensayoActual, jarra);
+            }
+        } else {
+            mostrarCosecha = true;
+            mostrarTraslado = false;
+        }
+        tipoEl.innerHTML = '';
+        var opt0 = document.createElement('option');
+        opt0.value = '';
+        opt0.textContent = 'Selecciona...';
+        opt0.disabled = true;
+        tipoEl.appendChild(opt0);
+        if (mostrarCosecha) {
+            var optC = document.createElement('option');
+            optC.value = 'C';
+            optC.textContent = 'Cosecha';
+            tipoEl.appendChild(optC);
+        }
+        if (mostrarTraslado) {
+            var optT = document.createElement('option');
+            optT.value = 'T';
+            optT.textContent = 'Traslado';
+            tipoEl.appendChild(optT);
+        }
+        if (mostrarCosecha && !mostrarTraslado) {
+            tipoEl.value = 'C';
+        } else if (!mostrarCosecha && mostrarTraslado) {
+            tipoEl.value = 'T';
+        } else if (valorTipoAnterior === 'C' && mostrarCosecha) {
+            tipoEl.value = 'C';
+        } else if (valorTipoAnterior === 'T' && mostrarTraslado) {
+            tipoEl.value = 'T';
+        } else {
+            opt0.selected = true;
+        }
+    }
+    /** N° JARRA siempre es un select dinámico: opciones según TIPO; si hay 2+ jarras con Cosecha sin Traslado añade siempre 1-2, 2-3… (viaje grupal) aunque TIPO sea Cosecha, para que al eliminar Traslados vuelva a salir. No limpia el valor al cambiar TIPO. */
+    function actualizarCampoNJarraSegunTipo() {
+        var td = document.getElementById('td_jarras_n_jarra');
+        var tipoEl = document.getElementById('reg_jarras_tipo');
+        if (!td || !tipoEl) return;
+        var tipo = (tipoEl.value || '').trim();
+        var ids = getOpcionesJarra(ensayoActual, tipo);
+        var idsConCosechaSinTraslado = getJarrasSinTraslado(ensayoActual);
+        var valorActual = '';
+        var elActual = document.getElementById('reg_jarras_n_jarra');
+        if (elActual && elActual.tagName === 'SELECT') valorActual = (elActual.value || '').trim();
+
+        var html = '<select id="reg_jarras_n_jarra" name="reg_jarras_n_jarra" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;"><option value="">Selecciona...</option>';
+        for (var k = 0; k < ids.length; k++) {
+            html += '<option value="' + ids[k] + '">' + ids[k] + '</option>';
+        }
+        if (idsConCosechaSinTraslado.length >= 2) {
+            for (var i = 0; i < idsConCosechaSinTraslado.length - 1; i++) {
+                var valorGrupal = idsConCosechaSinTraslado[i] + '-' + idsConCosechaSinTraslado[i + 1];
+                if (!yaExisteTrasladoGrupal(ensayoActual, valorGrupal)) {
+                    html += '<option value="' + valorGrupal + '">' + valorGrupal + ' (viaje grupal)</option>';
+                }
+            }
+        }
+        html += '</select>';
+        td.innerHTML = html;
+        var sel = document.getElementById('reg_jarras_n_jarra');
+        if (sel && valorActual) {
+            var opcionExiste = [].slice.call(sel.options).some(function (o) { return o.value === valorActual; });
+            if (opcionExiste) sel.value = valorActual;
+        }
+        sel = document.getElementById('reg_jarras_n_jarra');
+        if (sel) sel.addEventListener('change', function () { actualizarTipoSegunJarra(); llenarInicioTrasladoSegunCosecha(); });
+        actualizarTipoSegunJarra();
+        setTimeout(function () { llenarInicioTrasladoSegunCosecha(); }, 0);
+    }
     function tieneDatosSinGuardar() {
         const ids = {
             visual: ['reg_visual_n_jarra', 'reg_visual_peso_1', 'reg_visual_peso_2', 'reg_visual_llegada_acopio', 'reg_visual_despacho_acopio'],
@@ -623,6 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
     var msgNoEnsayos = document.getElementById('view_no_ensayos_msg');
     var packingYaEnviadoPorFecha = {};
     var packingBloqueadoParaActual = false;
+    var packingEnviando = false; // true mientras se envía packing (mantiene botón deshabilitado)
     var numFilasEsperadoPorFechaEnsayo = {};
     if (inputFechaPacking && selEnsayoPacking) {
         selEnsayoPacking.addEventListener('change', async function () {
@@ -710,9 +1014,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 const d = res.data;
-                aplicarDatosVistaPacking(d, res.fromCache);
                 currentFechaPacking = fecha;
                 currentEnsayoPacking = ensayoNumero;
+                aplicarDatosVistaPacking(d, res.fromCache);
                 restaurarPackingDesdeStore(fecha, ensayoNumero);
                 Swal.fire({ title: res.fromCache ? 'Datos cargados (caché)' : 'Datos cargados', icon: 'success', timer: 1500, showConfirmButton: false });
             } catch (err) {
@@ -758,7 +1062,6 @@ document.addEventListener('DOMContentLoaded', () => {
         packing4: [],
         packing5: [],
         packing6: [],
-        packing7: [],
         packing8: []
     };
 
@@ -768,6 +1071,8 @@ document.addEventListener('DOMContentLoaded', () => {
     var MAX_PACKING_STORE_KEYS = 20;
     let currentFechaPacking = '';
     let currentEnsayoPacking = '';
+    /** Despacho acopio por fila: con internet viene del GET; sin internet se usa la caché del último GET (getDatosPacking). Así se valida igual con y sin conexión. */
+    var despachoPorFilaDesdeGET = {};
 
     function keyPacking(fecha, ensayo) {
         return (fecha || '') + '_' + (ensayo || '');
@@ -775,11 +1080,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function guardarPackingEnStore(fecha, ensayo) {
         if (!fecha || !ensayo) return;
+        var fi = document.getElementById('view_fecha_inspeccion');
+        var resp = document.getElementById('view_responsable');
         var h = document.getElementById('view_hora_recepcion');
         var n = document.getElementById('view_n_viaje');
         const key = keyPacking(fecha, ensayo);
         datosPackingPorEnsayo[key] = {
             maxFilasPacking: maxFilasPacking,
+            fecha_inspeccion: fi ? (fi.value || '').trim() : '',
+            responsable: resp ? (resp.value || '').trim() : '',
             hora_recepcion: h ? (h.value || '').trim() : '',
             n_viaje: n ? (n.value || '').trim() : '',
             packing1: datosPacking.packing1.map(function (x) { return { ...x }; }),
@@ -788,7 +1097,6 @@ document.addEventListener('DOMContentLoaded', () => {
             packing4: datosPacking.packing4.map(function (x) { return { ...x }; }),
             packing5: datosPacking.packing5.map(function (x) { return { ...x }; }),
             packing6: datosPacking.packing6.map(function (x) { return { ...x }; }),
-            packing7: datosPacking.packing7.map(function (x) { return { ...x }; }),
             packing8: datosPacking.packing8.map(function (x) { return { ...x }; })
         };
         if (datosPackingPorEnsayoKeysOrder.indexOf(key) === -1) datosPackingPorEnsayoKeysOrder.push(key);
@@ -806,17 +1114,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (el) el.value = (val != null && val !== '') ? String(val).trim() : '';
         };
         if (!stored) {
+            setView('view_fecha_inspeccion', '');
+            setView('view_responsable', '');
             setView('view_hora_recepcion', '');
             setView('view_n_viaje', '');
-            ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(function (k) { datosPacking[k] = []; });
+            ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing8'].forEach(function (k) { datosPacking[k] = []; });
             renderAllPackingRows();
             actualizarTodosContadoresPacking();
             return;
         }
+        setView('view_fecha_inspeccion', stored.fecha_inspeccion);
+        setView('view_responsable', stored.responsable);
         setView('view_hora_recepcion', stored.hora_recepcion);
         setView('view_n_viaje', stored.n_viaje);
         if (stored.maxFilasPacking != null && stored.maxFilasPacking > 0) maxFilasPacking = stored.maxFilasPacking;
-        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(function (k) {
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing8'].forEach(function (k) {
             datosPacking[k] = (stored[k] || []).map(function (x) { return { ...x }; });
         });
         renderAllPackingRows();
@@ -831,10 +1143,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof currentFechaPacking !== 'undefined' && typeof currentEnsayoPacking !== 'undefined') {
             var keyFeEn = keyPacking(currentFechaPacking, currentEnsayoPacking);
             if (keyFeEn) numFilasEsperadoPorFechaEnsayo[keyFeEn] = (d.numFilas != null && d.numFilas > 0) ? d.numFilas : null;
+            if (keyFeEn && Array.isArray(d.despachoPorFila)) despachoPorFilaDesdeGET[keyFeEn] = d.despachoPorFila;
         }
         packingBloqueadoParaActual = d.tienePacking === true;
         if (btnGuardarPacking) {
-            btnGuardarPacking.disabled = packingBloqueadoParaActual;
+            btnGuardarPacking.disabled = packingBloqueadoParaActual || packingEnviando;
             if (packingBloqueadoParaActual && typeof Swal !== 'undefined') {
                 Swal.fire({
                     title: 'Ya trabajado',
@@ -904,7 +1217,6 @@ document.addEventListener('DOMContentLoaded', () => {
         packing4: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
         packing5: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
         packing6: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
-        packing7: { recepcion: '', ingreso_gasificado: '', salida_gasificado: '', ingreso_prefrio: '', salida_prefrio: '' },
         packing8: { observacion: '' }
     };
 
@@ -966,7 +1278,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Solo rellena hasta n copiando la última fila; nunca crea filas vacías. Si una sección tiene 0 filas, no se agrega nada.
     function sincronizarFilasPacking() {
         const n = getPackingRowCount();
-        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(k => {
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing8'].forEach(k => {
             const arr = datosPacking[k];
             while (arr.length < n) {
                 if (arr.length > 0) arr.push({ ...arr[arr.length - 1] });
@@ -985,7 +1297,6 @@ document.addEventListener('DOMContentLoaded', () => {
         actualizarContadorPacking('next_clam_packing_humedad', datosPacking.packing4.length);
         actualizarContadorPacking('next_clam_packing_presion', datosPacking.packing5.length);
         actualizarContadorPacking('next_clam_packing_presion_fruta', datosPacking.packing6.length);
-        actualizarContadorPacking('next_clam_deficit', datosPacking.packing7.length);
         actualizarContadorPacking('next_clam_packing_obs', datosPacking.packing8.length);
     }
 
@@ -994,7 +1305,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (el) el.textContent = valor + 1;
     }
 
-    // Orden de columnas packing por fila lógica (41 valores): p1(5), p2(5), p3(10), p4(5), p5(5), p6(5), p7(5), p8(1). Fila 1 va primero, luego fila 2, etc.
+    // Orden de columnas packing por fila lógica (36 valores): p1(5), p2(5), p3(10), p4(5), p5(5), p6(5), p8(1). Sin déficit.
     function buildPackingRows() {
         const n = getPackingRowCount();
         const rows = [];
@@ -1005,7 +1316,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const p4 = datosPacking.packing4[i] || {};
             const p5 = datosPacking.packing5[i] || {};
             const p6 = datosPacking.packing6[i] || {};
-            const p7 = datosPacking.packing7[i] || {};
             const p8 = datosPacking.packing8[i] || {};
             const v = (x) => (x != null && x !== '') ? x : '';
             rows.push([
@@ -1015,7 +1325,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 v(p4.recepcion), v(p4.ingreso_gasificado), v(p4.salida_gasificado), v(p4.ingreso_prefrio), v(p4.salida_prefrio),
                 v(p5.recepcion), v(p5.ingreso_gasificado), v(p5.salida_gasificado), v(p5.ingreso_prefrio), v(p5.salida_prefrio),
                 v(p6.recepcion), v(p6.ingreso_gasificado), v(p6.salida_gasificado), v(p6.ingreso_prefrio), v(p6.salida_prefrio),
-                v(p7.recepcion), v(p7.ingreso_gasificado), v(p7.salida_gasificado), v(p7.ingreso_prefrio), v(p7.salida_prefrio),
                 v(p8.observacion)
             ]);
         }
@@ -1032,14 +1341,41 @@ document.addEventListener('DOMContentLoaded', () => {
         return len;
     }
 
-    /** Comprueba que las 8 secciones de packing tengan la misma cantidad de filas. */
+    /** Comprueba que las 7 secciones de packing tengan la misma cantidad de filas (sin packing7 déficit). */
     function validarConsistenciaFilasPacking(stored) {
         if (!stored) return { ok: true };
-        var keys = ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'];
+        var keys = ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing8'];
         var len0 = (stored.packing1 && stored.packing1.length) || 0;
         for (var i = 1; i < keys.length; i++) {
             var L = (stored[keys[i]] && stored[keys[i]].length) || 0;
             if (L !== len0) return { ok: false, lengths: keys.map(function (k) { return (stored[k] && stored[k].length) || 0; }) };
+        }
+        return { ok: true };
+    }
+
+    /** Al guardar/enviar packing: cada fila debe tener todos los inputs con data. Devuelve { ok: true } o { ok: false, msg, fila, seccion }. */
+    function validarPackingCompletoParaGuardar(stored) {
+        if (!stored) return { ok: true };
+        var n = getPackingRowCountFromStored(stored);
+        if (n === 0) return { ok: true };
+        var nombresSeccion = { packing1: 'Tiempos', packing2: 'Pesos', packing3: 'Temperatura', packing4: 'Humedad', packing5: 'Presión ambiente', packing6: 'Presión fruta', packing8: 'Observación' };
+        var vacio = function (v) { return v === null || v === undefined || (typeof v === 'string' && v.trim() === ''); };
+        for (var i = 0; i < n; i++) {
+            var p1 = (stored.packing1 && stored.packing1[i]) || {};
+            if (vacio(p1.recepcion) || vacio(p1.ingreso_gasificado) || vacio(p1.salida_gasificado) || vacio(p1.ingreso_prefrio) || vacio(p1.salida_prefrio)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing1 + '.', fila: i + 1, seccion: 'Tiempos' };
+            var p2 = (stored.packing2 && stored.packing2[i]) || {};
+            if (vacio(p2.peso_recepcion) || vacio(p2.peso_ingreso_gasificado) || vacio(p2.peso_salida_gasificado) || vacio(p2.peso_ingreso_prefrio) || vacio(p2.peso_salida_prefrio)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing2 + '.', fila: i + 1, seccion: 'Pesos' };
+            var p3 = (stored.packing3 && stored.packing3[i]) || {};
+            var campos3 = ['t_amb_recep', 't_pulp_recep', 't_amb_ing', 't_pulp_ing', 't_amb_sal', 't_pulp_sal', 't_amb_pre_in', 't_pulp_pre_in', 't_amb_pre_out', 't_pulp_pre_out'];
+            for (var c = 0; c < campos3.length; c++) { if (vacio(p3[campos3[c]])) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing3 + '.', fila: i + 1, seccion: 'Temperatura' }; }
+            var p4 = (stored.packing4 && stored.packing4[i]) || {};
+            if (vacio(p4.recepcion) || vacio(p4.ingreso_gasificado) || vacio(p4.salida_gasificado) || vacio(p4.ingreso_prefrio) || vacio(p4.salida_prefrio)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing4 + '.', fila: i + 1, seccion: 'Humedad' };
+            var p5 = (stored.packing5 && stored.packing5[i]) || {};
+            if (vacio(p5.recepcion) || vacio(p5.ingreso_gasificado) || vacio(p5.salida_gasificado) || vacio(p5.ingreso_prefrio) || vacio(p5.salida_prefrio)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing5 + '.', fila: i + 1, seccion: 'Presión ambiente' };
+            var p6 = (stored.packing6 && stored.packing6[i]) || {};
+            if (vacio(p6.recepcion) || vacio(p6.ingreso_gasificado) || vacio(p6.salida_gasificado) || vacio(p6.ingreso_prefrio) || vacio(p6.salida_prefrio)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing6 + '.', fila: i + 1, seccion: 'Presión fruta' };
+            var p8 = (stored.packing8 && stored.packing8[i]) || {};
+            if (vacio(p8.observacion)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete el campo de ' + nombresSeccion.packing8 + '.', fila: i + 1, seccion: 'Observación' };
         }
         return { ok: true };
     }
@@ -1055,7 +1391,6 @@ document.addEventListener('DOMContentLoaded', () => {
             var p4 = (stored.packing4 && stored.packing4[i]) || {};
             var p5 = (stored.packing5 && stored.packing5[i]) || {};
             var p6 = (stored.packing6 && stored.packing6[i]) || {};
-            var p7 = (stored.packing7 && stored.packing7[i]) || {};
             var p8 = (stored.packing8 && stored.packing8[i]) || {};
             rows.push([
                 v(p1.recepcion), v(p1.ingreso_gasificado), v(p1.salida_gasificado), v(p1.ingreso_prefrio), v(p1.salida_prefrio),
@@ -1064,7 +1399,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 v(p4.recepcion), v(p4.ingreso_gasificado), v(p4.salida_gasificado), v(p4.ingreso_prefrio), v(p4.salida_prefrio),
                 v(p5.recepcion), v(p5.ingreso_gasificado), v(p5.salida_gasificado), v(p5.ingreso_prefrio), v(p5.salida_prefrio),
                 v(p6.recepcion), v(p6.ingreso_gasificado), v(p6.salida_gasificado), v(p6.ingreso_prefrio), v(p6.salida_prefrio),
-                v(p7.recepcion), v(p7.ingreso_gasificado), v(p7.salida_gasificado), v(p7.ingreso_prefrio), v(p7.salida_prefrio),
                 v(p8.observacion)
             ]);
         }
@@ -1073,20 +1407,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Limpia el formulario packing después de subida exitosa (como el primer POST). Sin internet el fetch falla y no se limpia.
     function limpiarFormularioPacking() {
-        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(k => { datosPacking[k] = []; });
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing8'].forEach(k => { datosPacking[k] = []; });
         renderAllPackingRows();
+        var fi = document.getElementById('view_fecha_inspeccion');
+        var resp = document.getElementById('view_responsable');
         var h = document.getElementById('view_hora_recepcion');
         var n = document.getElementById('view_n_viaje');
+        if (fi) fi.value = '';
+        if (resp) resp.value = '';
         if (h) h.value = '';
         if (n) n.value = '';
-        var idsReg = ['reg_packing_recepcion','reg_packing_ingreso_gasificado','reg_packing_salida_gasificado','reg_packing_ingreso_prefrio','reg_packing_salida_prefrio','reg_packing_peso_recepcion','reg_packing_peso_ingreso_gasificado','reg_packing_peso_salida_gasificado','reg_packing_peso_ingreso_prefrio','reg_packing_peso_salida_prefrio','reg_packing_temp_amb_recepcion','reg_packing_temp_pulp_recepcion','reg_packing_temp_amb_ingreso_gas','reg_packing_temp_pulp_ingreso_gas','reg_packing_temp_amb_salida_gas','reg_packing_temp_pulp_salida_gas','reg_packing_temp_amb_ingreso_pre','reg_packing_temp_pulp_ingreso_pre','reg_packing_temp_amb_salida_pre','reg_packing_temp_pulp_salida_pre','reg_packing_humedad_recepcion','reg_packing_humedad_ingreso_gasificado','reg_packing_humedad_salida_gasificado','reg_packing_humedad_ingreso_prefrio','reg_packing_humedad_salida_prefrio','reg_packing_presion_recepcion','reg_packing_presion_ingreso_gasificado','reg_packing_presion_salida_gasificado','reg_packing_presion_ingreso_prefrio','reg_packing_presion_salida_prefrio','reg_packing_presion_fruta_recepcion','reg_packing_presion_fruta_ingreso_gasificado','reg_packing_presion_fruta_salida_gasificado','reg_packing_presion_fruta_ingreso_prefrio','reg_packing_presion_fruta_salida_prefrio','reg_packing_deficit_recepcion','reg_packing_deficit_ingreso_gasificado','reg_packing_deficit_salida_gasificado','reg_packing_deficit_ingreso_prefrio','reg_packing_deficit_salida_prefrio','reg_packing_obs_texto'];
+        var idsReg = ['reg_packing_recepcion','reg_packing_ingreso_gasificado','reg_packing_salida_gasificado','reg_packing_ingreso_prefrio','reg_packing_salida_prefrio','reg_packing_peso_recepcion','reg_packing_peso_ingreso_gasificado','reg_packing_peso_salida_gasificado','reg_packing_peso_ingreso_prefrio','reg_packing_peso_salida_prefrio','reg_packing_temp_amb_recepcion','reg_packing_temp_pulp_recepcion','reg_packing_temp_amb_ingreso_gas','reg_packing_temp_pulp_ingreso_gas','reg_packing_temp_amb_salida_gas','reg_packing_temp_pulp_salida_gas','reg_packing_temp_amb_ingreso_pre','reg_packing_temp_pulp_ingreso_pre','reg_packing_temp_amb_salida_pre','reg_packing_temp_pulp_salida_pre','reg_packing_humedad_recepcion','reg_packing_humedad_ingreso_gasificado','reg_packing_humedad_salida_gasificado','reg_packing_humedad_ingreso_prefrio','reg_packing_humedad_salida_prefrio','reg_packing_presion_recepcion','reg_packing_presion_ingreso_gasificado','reg_packing_presion_salida_gasificado','reg_packing_presion_ingreso_prefrio','reg_packing_presion_salida_prefrio','reg_packing_presion_fruta_recepcion','reg_packing_presion_fruta_ingreso_gasificado','reg_packing_presion_fruta_salida_gasificado','reg_packing_presion_fruta_ingreso_prefrio','reg_packing_presion_fruta_salida_prefrio','reg_packing_obs_texto'];
         idsReg.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
     }
 
     /** Limpia toda la sección Packing: formulario + campos de vista + selects (tras envío exitoso). */
     function limpiarTodoPacking() {
         limpiarFormularioPacking();
-        var viewIds = ['view_rotulo', 'view_etapa', 'view_campo', 'view_turno', 'view_placa', 'view_guia_despacho', 'view_variedad', 'view_hora_recepcion', 'view_n_viaje', 'view_fecha', 'view_ensayo_numero'];
+        var viewIds = ['view_rotulo', 'view_etapa', 'view_campo', 'view_turno', 'view_placa', 'view_guia_despacho', 'view_variedad', 'view_fecha_inspeccion', 'view_responsable', 'view_hora_recepcion', 'view_n_viaje', 'view_fecha', 'view_ensayo_numero'];
         viewIds.forEach(function (id) {
             var el = document.getElementById(id);
             if (el) el.value = '';
@@ -1094,6 +1432,202 @@ document.addEventListener('DOMContentLoaded', () => {
         var regVar = document.getElementById('reg_variedad');
         if (regVar) regVar.value = '';
         actualizarTodosContadoresPacking();
+    }
+
+    /** Genera PDF Calibrado Packing: mismo estilo que Visual. Datos del registro desde view_*; tablas desde datosPackingPorEnsayo. */
+    function generarPDFPacking(fecha, ensayosAEnviar, datosPackingPorEnsayo) {
+        if (!window.jspdf) {
+            if (typeof Swal !== 'undefined') Swal.fire({
+                title: 'PDF no disponible',
+                html: 'La librería para generar el PDF no está cargada.',
+                icon: 'warning',
+                confirmButtonColor: '#2f7cc0'
+            });
+            return null;
+        }
+        var getView = function (id) { var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+        var fechaInspeccion = getView('view_fecha_inspeccion');
+        var responsable = getView('view_responsable');
+        var horaRecepcion = getView('view_hora_recepcion');
+        var rotulo = getView('view_rotulo') || ('Ensayo ' + ensayosAEnviar.join(', Ensayo '));
+        var etapa = getView('view_etapa');
+        var campo = getView('view_campo');
+        var turno = getView('view_turno');
+        var ubicacion = [etapa, campo, turno].filter(Boolean).join(' / ') || '—';
+        var variedad = getView('view_variedad');
+        var placa = getView('view_placa');
+        var guiaDespacho = getView('view_guia_despacho');
+        var nViaje = getView('view_n_viaje');
+
+        var v = function (x) { return (x != null && x !== '') ? String(x).trim() : ''; };
+        var rowsP1 = [], rowsP2 = [], rowsP3 = [], rowsP4 = [], rowsP5 = [], rowsP6 = [], rowsP8 = [];
+        for (var e = 0; e < ensayosAEnviar.length; e++) {
+            var key = keyPacking(fecha, String(ensayosAEnviar[e]));
+            var stored = datosPackingPorEnsayo[key];
+            if (!stored) continue;
+            var n = getPackingRowCountFromStored(stored);
+            for (var i = 0; i < n; i++) {
+                var p1 = (stored.packing1 && stored.packing1[i]) || {};
+                var p2 = (stored.packing2 && stored.packing2[i]) || {};
+                var p3 = (stored.packing3 && stored.packing3[i]) || {};
+                var p4 = (stored.packing4 && stored.packing4[i]) || {};
+                var p5 = (stored.packing5 && stored.packing5[i]) || {};
+                var p6 = (stored.packing6 && stored.packing6[i]) || {};
+                var p8 = (stored.packing8 && stored.packing8[i]) || {};
+                rowsP1.push([ensayosAEnviar[e], i + 1, v(p1.recepcion), v(p1.ingreso_gasificado), v(p1.salida_gasificado), v(p1.ingreso_prefrio), v(p1.salida_prefrio)]);
+                rowsP2.push([ensayosAEnviar[e], i + 1, v(p2.peso_recepcion), v(p2.peso_ingreso_gasificado), v(p2.peso_salida_gasificado), v(p2.peso_ingreso_prefrio), v(p2.peso_salida_prefrio)]);
+                rowsP3.push([ensayosAEnviar[e], i + 1, v(p3.t_amb_recep), v(p3.t_pulp_recep), v(p3.t_amb_ing), v(p3.t_pulp_ing), v(p3.t_amb_sal), v(p3.t_pulp_sal), v(p3.t_amb_pre_in), v(p3.t_pulp_pre_in), v(p3.t_amb_pre_out), v(p3.t_pulp_pre_out)]);
+                rowsP4.push([ensayosAEnviar[e], i + 1, v(p4.recepcion), v(p4.ingreso_gasificado), v(p4.salida_gasificado), v(p4.ingreso_prefrio), v(p4.salida_prefrio)]);
+                rowsP5.push([ensayosAEnviar[e], i + 1, v(p5.recepcion), v(p5.ingreso_gasificado), v(p5.salida_gasificado), v(p5.ingreso_prefrio), v(p5.salida_prefrio)]);
+                rowsP6.push([ensayosAEnviar[e], i + 1, v(p6.recepcion), v(p6.ingreso_gasificado), v(p6.salida_gasificado), v(p6.ingreso_prefrio), v(p6.salida_prefrio)]);
+                rowsP8.push([ensayosAEnviar[e], i + 1, (p8.observacion != null && p8.observacion !== '') ? String(p8.observacion).substring(0, 45) : '']);
+            }
+        }
+
+        try {
+            var JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : window.jspdf;
+            var doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            var pageW = doc.internal.pageSize.getWidth();
+            var contentWidth = 180;
+            var margin = (pageW - contentWidth) / 2;
+            var marginTopInicial = 14;
+            var y = marginTopInicial;
+            var fontSize = 9;
+            var headerH = 18;
+            var headerLeftW = 36;
+            var headerRightW = 36;
+            var headerCenterW = contentWidth - headerLeftW - headerRightW;
+            doc.setDrawColor(0, 0, 0);
+            doc.setLineWidth(0.3);
+            doc.rect(margin, y, headerLeftW, headerH);
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'bold');
+            doc.text('AGROVISION', margin + headerLeftW / 2, y + headerH / 2 + 1.5, { align: 'center' });
+            doc.rect(margin + headerLeftW, y, headerCenterW, headerH);
+            var tituloEncabezado = 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN COSECHA ARÁNDANO- C5-C6-A9-LN';
+            doc.setFontSize(7);
+            var lineasTitulo = doc.splitTextToSize(tituloEncabezado, headerCenterW - 4);
+            var tituloY = y + (headerH - (lineasTitulo.length * 3.5)) / 2 + 2.5;
+            lineasTitulo.forEach(function (line, i) {
+                doc.text(line, margin + headerLeftW + headerCenterW / 2, tituloY + i * 3.5, { align: 'center' });
+            });
+            doc.rect(margin + headerLeftW + headerCenterW, y, headerRightW, headerH);
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(8);
+            doc.text('Código: PE-F-QPH-306', margin + contentWidth - headerRightW + 2, y + 5, { align: 'left' });
+            doc.text('Versión: 1', margin + contentWidth - headerRightW + 2, y + 9.5, { align: 'left' });
+            var now = new Date();
+            var genStr = 'Generado: ' + now.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+            doc.setFontSize(6);
+            doc.text(genStr, margin + contentWidth - headerRightW + 2, y + 14.5, { align: 'left' });
+            y += headerH + 3;
+
+            doc.setDrawColor(0, 0, 0);
+            doc.setLineWidth(0.2);
+            var paddingTopDatos = 5;
+            var titleDatosH = 5;
+            var rowHDatos = 5.2;
+            var numRowsDatos = 5;
+            var paddingBottomDatos = 1;
+            var blockH = paddingTopDatos + titleDatosH + numRowsDatos * rowHDatos + paddingBottomDatos;
+            var yDatosStart = y;
+            doc.rect(margin, y, contentWidth, blockH);
+            y += paddingTopDatos;
+            var bullet = '\u2022';
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'bold');
+            doc.text('Datos del registro', margin + contentWidth / 2, y, { align: 'center' });
+            y += titleDatosH;
+            doc.setFont(undefined, 'normal');
+            var camposPDF = [
+                { label: 'Tipo de Medición', value: 'Calibrado Packing' },
+                { label: 'Fecha Inspección', value: fechaInspeccion || '—' },
+                { label: 'Responsable', value: responsable || '—' },
+                { label: 'Hora Recepción', value: horaRecepcion || '—' },
+                { label: 'Rótulo / Ensayos', value: rotulo },
+                { label: 'Ubicación (Etapa/Campo/Turno)', value: ubicacion },
+                { label: 'Variedad', value: variedad || '—' },
+                { label: 'N° Placa Camioneta', value: placa || '—' },
+                { label: 'N° Guía Despacho', value: guiaDespacho || '—' },
+                { label: 'N° Viaje', value: nViaje || '—' }
+            ];
+            var colW = contentWidth / 2;
+            var leftX = margin + 3;
+            var rightX = margin + colW + 3;
+            for (var c = 0; c < camposPDF.length; c += 2) {
+                var c0 = camposPDF[c];
+                var c1 = camposPDF[c + 1];
+                doc.setFont(undefined, 'normal');
+                doc.text(bullet + ' ' + c0.label + ': ', leftX, y);
+                doc.setFont(undefined, 'bold');
+                doc.text((c0.value || '—').substring(0, 22), leftX + doc.getTextWidth(bullet + ' ' + c0.label + ': '), y);
+                if (c1) {
+                    doc.setFont(undefined, 'normal');
+                    doc.text(bullet + ' ' + c1.label + ': ', rightX, y);
+                    doc.setFont(undefined, 'bold');
+                    doc.text((c1.value || '—').substring(0, 22), rightX + doc.getTextWidth(bullet + ' ' + c1.label + ': '), y);
+                }
+                y += rowHDatos;
+            }
+            y = yDatosStart + blockH + 2;
+
+            doc.setDrawColor(0, 0, 0);
+            doc.setLineWidth(0.4);
+            var lineH = 6;
+            var yMax = 272;
+            var marginTopNuevaPagina = 12;
+            function drawTablePacking(titulo, headers, dataRows) {
+                var rows = (dataRows || []).slice(0, 15);
+                var totalTableH = (1 + rows.length) * lineH;
+                var sectionH = 4 + 3 + totalTableH + 2;
+                if (y + sectionH > yMax) {
+                    doc.addPage();
+                    y = marginTopNuevaPagina;
+                }
+                y += 3;
+                doc.setFontSize(fontSize);
+                doc.setFont(undefined, 'bold');
+                doc.text(titulo, margin, y, { align: 'left' });
+                y += 2;
+                doc.setFont(undefined, 'normal');
+                var nCol = headers.length;
+                var tableColW = contentWidth / Math.max(nCol, 1);
+                var totalH = (1 + rows.length) * lineH;
+                var startY = y;
+                doc.rect(margin, startY, contentWidth, totalH);
+                for (var c = 1; c < nCol; c++) doc.line(margin + c * tableColW, startY, margin + c * tableColW, startY + totalH);
+                for (var r = 0; r <= rows.length + 1; r++) doc.line(margin, startY + r * lineH, margin + contentWidth, startY + r * lineH);
+                var headerFont = nCol >= 8 ? 5.5 : (nCol > 6 ? 6 : 7);
+                doc.setFontSize(headerFont);
+                headers.forEach(function (h, i) { doc.text(h, margin + i * tableColW + tableColW / 2, startY + lineH / 2 + 1.2, { align: 'center' }); });
+                var cellFont = nCol >= 8 ? 7 : (nCol > 6 ? 7 : 8);
+                doc.setFontSize(cellFont);
+                y = startY + lineH;
+                rows.forEach(function (row) {
+                    (row || []).forEach(function (val, i) {
+                        if (i < nCol) doc.text(String(val || '').substring(0, 12), margin + i * tableColW + tableColW / 2, y + lineH / 2 + 1.2, { align: 'center' });
+                    });
+                    y += lineH;
+                });
+                doc.setFontSize(fontSize);
+                y += 1;
+            }
+            drawTablePacking('1. Tiempos de la muestra', ['Ensayo', 'N°', 'RECEP.', 'IN. GAS.', 'OUT GAS.', 'IN. PRE.', 'OUT PRE.'], rowsP1);
+            drawTablePacking('2. Pesos', ['Ensayo', 'N°', 'PESO RECEP.', 'PESO IN.GAS', 'PESO OUT.G', 'PESO IN.PR', 'PESO OUT.P'], rowsP2);
+            drawTablePacking('3. Temperatura muestra', ['Ensayo', 'N°', 'T.AMB R', 'T.PUL R', 'T.AMB IN', 'T.PUL IN', 'T.AMB S', 'T.PUL S', 'T.AMB PI', 'T.PUL PI', 'T.AMB PO', 'T.PUL PO'], rowsP3);
+            drawTablePacking('4. Humedad', ['Ensayo', 'N°', 'RECEP.', 'IN. GAS.', 'OUT GAS.', 'IN. PRE.', 'OUT PRE.'], rowsP4);
+            drawTablePacking('5. Presión ambiente', ['Ensayo', 'N°', 'RECEP.', 'IN. GAS.', 'OUT GAS.', 'IN. PRE.', 'OUT PRE.'], rowsP5);
+            drawTablePacking('6. Presión fruta', ['Ensayo', 'N°', 'RECEP.', 'IN. GAS.', 'OUT GAS.', 'IN. PRE.', 'OUT PRE.'], rowsP6);
+            drawTablePacking('7. Observaciones por muestra', ['Ensayo', 'N°', 'OBSERVACIÓN'], rowsP8);
+
+            var nombreArchivo = 'MTTP_Packing_' + (fecha || 'fecha') + '_Ensayo' + (ensayosAEnviar.join('-')) + '.pdf';
+            var blob = doc.output('blob');
+            return { blobUrl: URL.createObjectURL(blob), nombreArchivo: nombreArchivo };
+        } catch (err) {
+            console.error(err);
+            if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error', text: 'No se pudo generar el PDF.', icon: 'error' });
+            return null;
+        }
     }
 
     if (btnGuardarPacking) {
@@ -1146,6 +1680,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     return;
                 }
+                var validCompleto = validarPackingCompletoParaGuardar(stV);
+                if (!validCompleto.ok) {
+                    Swal.fire({
+                        title: 'Campos incompletos',
+                        html: 'Al guardar, cada fila debe tener todos los campos llenos.<br><br><strong>' + validCompleto.msg + '</strong>',
+                        icon: 'error',
+                        confirmButtonColor: '#d33'
+                    });
+                    return;
+                }
                 var numEsperado = numFilasEsperadoPorFechaEnsayo[keyV];
                 if (numEsperado == null) {
                     var cache = getPackingCache();
@@ -1170,24 +1714,58 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (st) totalFilas += getPackingRowCountFromStored(st);
             }
             var result = await Swal.fire({
-                title: '¿Enviar packing?',
-                html: 'Se enviará:<br><strong>Ensayo ' + ensayosAEnviar.join(', Ensayo ') + '</strong><br>Total: <strong>' + totalFilas + '</strong> fila(s).<br><br>¿Continuar?',
+                title: '¿Qué deseas hacer?',
+                html: 'Se van a guardar <strong>' + totalFilas + '</strong> fila(s) de <strong>' + ensayosAEnviar.length + '</strong> ensayo(s) (Ensayo ' + ensayosAEnviar.join(', Ensayo ') + ').<br><br>' +
+                    '• <strong>Ver PDF</strong>: abre la vista previa del PDF (puedes descargarlo o cerrar).<br>' +
+                    '• <strong>Guardar</strong>: envía el packing al servidor (y se guarda).<br>' +
+                    '• <strong>Cancelar</strong>: no hace nada; puedes seguir editando.',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonText: 'Enviar',
+                showDenyButton: true,
+                confirmButtonText: 'Ver PDF',
+                denyButtonText: 'Guardar',
                 cancelButtonText: 'Cancelar',
-                confirmButtonColor: '#2f7cc0',
+                confirmButtonColor: '#28a745',
+                denyButtonColor: '#2f7cc0',
                 cancelButtonColor: '#6c757d'
             });
-            if (!result.isConfirmed) return;
+            if (result.isConfirmed) {
+                var pdfResult = generarPDFPacking(fecha, ensayosAEnviar, datosPackingPorEnsayo);
+                if (pdfResult && pdfResult.blobUrl) {
+                    await Swal.fire({
+                        title: 'Vista previa del PDF',
+                        html: '<iframe src="' + pdfResult.blobUrl + '" style="width:100%;height:70vh;border:1px solid #ddd;border-radius:4px"></iframe>',
+                        width: 920,
+                        showConfirmButton: false,
+                        showDenyButton: true,
+                        denyButtonText: 'Descargar PDF',
+                        showCancelButton: true,
+                        cancelButtonText: 'Cerrar',
+                        denyButtonColor: '#28a745',
+                        cancelButtonColor: '#6c757d'
+                    }).then(function (r) {
+                        if (r.isDenied) {
+                            var a = document.createElement('a');
+                            a.href = pdfResult.blobUrl;
+                            a.download = pdfResult.nombreArchivo;
+                            a.click();
+                        }
+                    });
+                }
+                return;
+            }
+            if (!result.isDenied) return;
 
+            packingEnviando = true;
             btnGuardarPacking.disabled = true;
+            btnGuardarPacking.setAttribute('aria-busy', 'true');
             var packingText = btnGuardarPacking.querySelector('.btn-guardar-text');
             var spinnerPacking = document.getElementById('spinner_packing');
             if (packingText) packingText.textContent = 'Guardando...';
             if (spinnerPacking) spinnerPacking.style.display = 'inline-block';
             var cache = getPackingCache();
             var enviados = 0;
+            var enCola = [];
             try {
                 for (var i = 0; i < ensayosAEnviar.length; i++) {
                     var ensayoNumero = String(ensayosAEnviar[i]);
@@ -1197,15 +1775,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     var stored = datosPackingPorEnsayo[keyFeEn];
                     var packingRows = buildPackingRowsFromStored(stored);
                     if (packingRows.length === 0) continue;
+                    var fechaInspeccion = (stored.fecha_inspeccion != null && stored.fecha_inspeccion !== '') ? String(stored.fecha_inspeccion).trim() : '';
+                    var responsable = (stored.responsable != null && stored.responsable !== '') ? String(stored.responsable).trim() : '';
                     var horaRecepcion = (stored.hora_recepcion != null && stored.hora_recepcion !== '') ? String(stored.hora_recepcion).trim() : '';
                     var nViaje = (stored.n_viaje != null && stored.n_viaje !== '') ? String(stored.n_viaje).trim() : '';
-                    await postPacking({ fecha: fecha, ensayo_numero: ensayoNumero, fila: fila, hora_recepcion: horaRecepcion, n_viaje: nViaje, packingRows: packingRows });
-                    enviados++;
+                    var payload = { fecha: fecha, ensayo_numero: ensayoNumero, fila: fila, fecha_inspeccion: fechaInspeccion, responsable: responsable, hora_recepcion: horaRecepcion, n_viaje: nViaje, packingRows: packingRows };
+                    try {
+                        await postPacking(payload);
+                        enviados++;
+                    } catch (err) {
+                        savePackingToQueue(payload);
+                        enCola.push(ensayoNumero);
+                    }
                     delete datosPackingPorEnsayo[keyFeEn];
                     var idx = datosPackingPorEnsayoKeysOrder.indexOf(keyFeEn);
                     if (idx !== -1) datosPackingPorEnsayoKeysOrder.splice(idx, 1);
                 }
-                if (enviados > 0) {
+                updateUI();
+                if (enviados > 0 || enCola.length > 0) {
                     limpiarTodoPacking();
                     for (var b = 1; b <= 8; b++) {
                         var bodyId = 'body-packing-' + b;
@@ -1215,17 +1802,35 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (bodyEl) bodyEl.style.display = 'none';
                         if (chevronEl) chevronEl.classList.remove('rotate');
                     }
-                    await Swal.fire({
-                        title: 'Packing enviado',
-                        html: 'Se enviaron <strong>' + enviados + '</strong> ensayo(s): Ensayo ' + ensayosAEnviar.join(', Ensayo ') + '.<br><br>Se limpió el formulario y se cerraron los bloques.',
-                        icon: 'success',
-                        confirmButtonColor: '#2f7cc0'
-                    });
+                    if (enCola.length > 0 && enviados === 0) {
+                        await Swal.fire({
+                            title: 'Guardado en cola',
+                            html: 'Sin conexión. Se guardó el packing (Ensayo ' + enCola.join(', Ensayo ') + ').<br><br>Se enviará automáticamente cuando haya internet.',
+                            icon: 'info',
+                            confirmButtonColor: '#2f7cc0'
+                        });
+                    } else if (enCola.length > 0 && enviados > 0) {
+                        await Swal.fire({
+                            title: 'Packing enviado en parte',
+                            html: 'Se enviaron <strong>' + enviados + '</strong> ensayo(s).<br><strong>' + enCola.length + '</strong> guardado(s) en cola (sin conexión); se enviarán cuando haya internet.',
+                            icon: 'warning',
+                            confirmButtonColor: '#2f7cc0'
+                        });
+                    } else if (enviados > 0) {
+                        await Swal.fire({
+                            title: 'Packing enviado',
+                            html: 'Se enviaron <strong>' + enviados + '</strong> ensayo(s): Ensayo ' + ensayosAEnviar.join(', Ensayo ') + '.<br><br>Se limpió el formulario y se cerraron los bloques.',
+                            icon: 'success',
+                            confirmButtonColor: '#2f7cc0'
+                        });
+                    }
                 }
             } catch (e) {
                 Swal.fire({ title: 'Error', text: (e && e.message) || 'No se pudo enviar el packing.', icon: 'error', confirmButtonColor: '#d33' });
             } finally {
-                btnGuardarPacking.disabled = false;
+                packingEnviando = false;
+                btnGuardarPacking.disabled = packingBloqueadoParaActual;
+                btnGuardarPacking.removeAttribute('aria-busy');
                 if (packingText) packingText.textContent = 'ENVIAR PACKING';
                 if (spinnerPacking) spinnerPacking.style.display = 'none';
             }
@@ -1254,7 +1859,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Replicar solo en ESA sección. Referencia = wrapper_packing_2 (Pesos): no se puede tener más filas que las de Packing 2. Packing 2 no tiene botón Replica (es el padre).
-    const SECTION_KEYS_REPLICA = ['packing1', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'];
+    const SECTION_KEYS_REPLICA = ['packing1', 'packing3', 'packing4', 'packing5', 'packing6', 'packing8'];
     function replicarHastaPacking2(sectionKey, rowIndex) {
         const ref = (datosPacking.packing2 && datosPacking.packing2.length) || 0;
         if (ref === 0) {
@@ -1294,10 +1899,14 @@ document.addEventListener('DOMContentLoaded', () => {
         row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2('packing1', num - 1); });
     }
 
+    function fmtPacking(val, unit) {
+        if (val === null || val === undefined || val === '') return '-';
+        return val + unit;
+    }
     function agregarFilaPacking2(data, tbody, num) {
         const row = document.createElement('tr');
         row.setAttribute('data-packing-index', num - 1);
-        row.innerHTML = `<td class="b-left">${num}</td><td>${data.peso_recepcion ?? '-'}</td><td>${data.peso_ingreso_gasificado ?? '-'}</td><td>${data.peso_salida_gasificado ?? '-'}</td><td>${data.peso_ingreso_prefrio ?? '-'}</td><td>${data.peso_salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button></td>`;
+        row.innerHTML = `<td class="b-left">${num}</td><td>${fmtPacking(data.peso_recepcion, 'g')}</td><td>${fmtPacking(data.peso_ingreso_gasificado, 'g')}</td><td>${fmtPacking(data.peso_salida_gasificado, 'g')}</td><td>${fmtPacking(data.peso_ingreso_prefrio, 'g')}</td><td>${fmtPacking(data.peso_salida_prefrio, 'g')}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button></td>`;
         tbody.appendChild(row);
         if (window.lucide) lucide.createIcons();
         row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking2(num - 1, data));
@@ -1307,7 +1916,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function agregarFilaPacking3(data, tbody, num) {
         const row = document.createElement('tr');
         row.setAttribute('data-packing-index', num - 1);
-        row.innerHTML = `<td class="b-left">${num}</td><td>${data.t_amb_recep ?? '-'}</td><td>${data.t_pulp_recep ?? '-'}</td><td>${data.t_amb_ing ?? '-'}</td><td>${data.t_pulp_ing ?? '-'}</td><td>${data.t_amb_sal ?? '-'}</td><td>${data.t_pulp_sal ?? '-'}</td><td>${data.t_amb_pre_in ?? '-'}</td><td>${data.t_pulp_pre_in ?? '-'}</td><td>${data.t_amb_pre_out ?? '-'}</td><td>${data.t_pulp_pre_out ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        const c = (v) => fmtPacking(v, '°C');
+        row.innerHTML = `<td class="b-left">${num}</td><td>${c(data.t_amb_recep)}</td><td>${c(data.t_pulp_recep)}</td><td>${c(data.t_amb_ing)}</td><td>${c(data.t_pulp_ing)}</td><td>${c(data.t_amb_sal)}</td><td>${c(data.t_pulp_sal)}</td><td>${c(data.t_amb_pre_in)}</td><td>${c(data.t_pulp_pre_in)}</td><td>${c(data.t_amb_pre_out)}</td><td>${c(data.t_pulp_pre_out)}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
         tbody.appendChild(row);
         if (window.lucide) lucide.createIcons();
         row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking3(num - 1, data));
@@ -1318,7 +1928,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function agregarFilaPacking4(data, tbody, num) {
         const row = document.createElement('tr');
         row.setAttribute('data-packing-index', num - 1);
-        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        const p = (v) => fmtPacking(v, '%');
+        row.innerHTML = `<td class="b-left">${num}</td><td>${p(data.recepcion)}</td><td>${p(data.ingreso_gasificado)}</td><td>${p(data.salida_gasificado)}</td><td>${p(data.ingreso_prefrio)}</td><td>${p(data.salida_prefrio)}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
         tbody.appendChild(row);
         if (window.lucide) lucide.createIcons();
         row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking4(num - 1, data));
@@ -1329,7 +1940,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function agregarFilaPacking5(data, tbody, num) {
         const row = document.createElement('tr');
         row.setAttribute('data-packing-index', num - 1);
-        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        const k = (v) => fmtPacking(v, ' Kpa');
+        row.innerHTML = `<td class="b-left">${num}</td><td>${k(data.recepcion)}</td><td>${k(data.ingreso_gasificado)}</td><td>${k(data.salida_gasificado)}</td><td>${k(data.ingreso_prefrio)}</td><td>${k(data.salida_prefrio)}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
         tbody.appendChild(row);
         if (window.lucide) lucide.createIcons();
         row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking5(num - 1, data));
@@ -1340,23 +1952,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function agregarFilaPacking6(data, tbody, num) {
         const row = document.createElement('tr');
         row.setAttribute('data-packing-index', num - 1);
-        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
+        const k = (v) => fmtPacking(v, ' Kpa');
+        row.innerHTML = `<td class="b-left">${num}</td><td>${k(data.recepcion)}</td><td>${k(data.ingreso_gasificado)}</td><td>${k(data.salida_gasificado)}</td><td>${k(data.ingreso_prefrio)}</td><td>${k(data.salida_prefrio)}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
         tbody.appendChild(row);
         if (window.lucide) lucide.createIcons();
         row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking6(num - 1, data));
         row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking('packing6', num - 1));
         row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2('packing6', num - 1); });
-    }
-
-    function agregarFilaPacking7(data, tbody, num) {
-        const row = document.createElement('tr');
-        row.setAttribute('data-packing-index', num - 1);
-        row.innerHTML = `<td class="b-left">${num}</td><td>${data.recepcion ?? '-'}</td><td>${data.ingreso_gasificado ?? '-'}</td><td>${data.salida_gasificado ?? '-'}</td><td>${data.ingreso_prefrio ?? '-'}</td><td>${data.salida_prefrio ?? '-'}</td><td class="b-right"><button type="button" class="btn-edit-row" title="Editar"><i data-lucide="pencil"></i></button><button type="button" class="btn-delete-row" title="Eliminar"><i data-lucide="trash-2"></i></button><button type="button" class="btn-replicate-row" title="Replicar"><i data-lucide="copy"></i></button></td>`;
-        tbody.appendChild(row);
-        if (window.lucide) lucide.createIcons();
-        row.querySelector('.btn-edit-row').addEventListener('click', () => editarFilaPacking7(num - 1, data));
-        row.querySelector('.btn-delete-row').addEventListener('click', () => eliminarFilaPacking('packing7', num - 1));
-        row.querySelector('.btn-replicate-row').addEventListener('click', () => { replicarHastaPacking2('packing7', num - 1); });
     }
 
     function agregarFilaPacking8(data, tbody, num) {
@@ -1377,7 +1979,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const t4 = document.getElementById('tbody-packing-humedad');
         const t5 = document.getElementById('tbody-packing-presion');
         const t6 = document.getElementById('tbody-packing-presion-fruta');
-        const t7 = document.getElementById('tbody-packing-deficit');
         const t8 = document.getElementById('tbody-packing-obs');
         if (t1) { t1.innerHTML = ''; datosPacking.packing1.forEach((d, i) => agregarFilaPacking1(d, t1, i + 1)); }
         if (t2) { t2.innerHTML = ''; datosPacking.packing2.forEach((d, i) => agregarFilaPacking2(d, t2, i + 1)); }
@@ -1385,14 +1986,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (t4) { t4.innerHTML = ''; datosPacking.packing4.forEach((d, i) => agregarFilaPacking4(d, t4, i + 1)); }
         if (t5) { t5.innerHTML = ''; datosPacking.packing5.forEach((d, i) => agregarFilaPacking5(d, t5, i + 1)); }
         if (t6) { t6.innerHTML = ''; datosPacking.packing6.forEach((d, i) => agregarFilaPacking6(d, t6, i + 1)); }
-        if (t7) { t7.innerHTML = ''; datosPacking.packing7.forEach((d, i) => agregarFilaPacking7(d, t7, i + 1)); }
         if (t8) { t8.innerHTML = ''; datosPacking.packing8.forEach((d, i) => agregarFilaPacking8(d, t8, i + 1)); }
         actualizarTodosContadoresPacking();
     }
 
     const modalGrid = (labels, inputsHtml) => `<div class="packing-modal-grid">${labels.map((l, i) => `<div class="packing-modal-field"><label>${l}</label>${inputsHtml[i]}</div>`).join('')}</div>`;
 
-    /** Validación Packing 1: recepcion < ingreso_gas < salida_gas < ingreso_prefrio < salida_prefrio (tiempos). */
+    /** Validación Packing 1: recepcion ≤ ingreso_gas ≤ salida_gas ≤ ingreso_prefrio ≤ salida_prefrio (tiempos progresivos, igual o mayor). Requiere todos llenos. */
     function validarPacking1Tiempos(data) {
         const r = (data.recepcion || '').trim();
         const ig = (data.ingreso_gasificado || '').trim();
@@ -1400,14 +2000,44 @@ document.addEventListener('DOMContentLoaded', () => {
         const ip = (data.ingreso_prefrio || '').trim();
         const sp = (data.salida_prefrio || '').trim();
         if (!r || !ig || !sg || !ip || !sp) return { ok: false, msg: 'Todos los tiempos deben estar llenos.' };
-        if (ig <= r) return { ok: false, msg: 'Ingreso Gasificado debe ser mayor que Recepción.' };
-        if (sg <= ig) return { ok: false, msg: 'Salida Gasificado debe ser mayor que Ingreso Gasificado.' };
-        if (ip <= sg) return { ok: false, msg: 'Ingreso Prefrío debe ser mayor que Salida Gasificado.' };
-        if (sp <= ip) return { ok: false, msg: 'Salida Prefrío debe ser mayor que Ingreso Prefrío.' };
+        if (ig < r) return { ok: false, msg: 'Recep. ≤ In Gas. (In Gas. debe ser mayor o igual).' };
+        if (sg < ig) return { ok: false, msg: 'In Gas. ≤ Out Gas. (Out Gas. debe ser mayor o igual).' };
+        if (ip < sg) return { ok: false, msg: 'Out Gas. ≤ In Pre. (In Pre. debe ser mayor o igual).' };
+        if (sp < ip) return { ok: false, msg: 'In Pre. ≤ Out Pre. (Out Pre. debe ser mayor o igual).' };
         return { ok: true };
     }
 
-    /** Validación Packing 2: peso_recepcion > peso_ingreso_gas >= peso_salida_gas >= peso_ingreso_pre >= peso_salida_pre. */
+    /** Validación Packing 1 para editar/agregar: permite campos vacíos; los llenos deben ir en orden progresivo (recep ≤ in gas ≤ out gas ≤ in pre ≤ out pre). Mensaje específico por par. */
+    function validarPacking1TiemposOpcional(data) {
+        var recep = (data.recepcion || '').trim();
+        var inGas = (data.ingreso_gasificado || '').trim();
+        var outGas = (data.salida_gasificado || '').trim();
+        var inPre = (data.ingreso_prefrio || '').trim();
+        var outPre = (data.salida_prefrio || '').trim();
+        if (recep && inGas && inGas < recep) return { ok: false, msg: 'Recep. ≤ In Gas. (In Gas. debe ser mayor o igual).' };
+        if (inGas && outGas && outGas < inGas) return { ok: false, msg: 'In Gas. ≤ Out Gas. (Out Gas. debe ser mayor o igual).' };
+        if (outGas && inPre && inPre < outGas) return { ok: false, msg: 'Out Gas. ≤ In Pre. (In Pre. debe ser mayor o igual).' };
+        if (inPre && outPre && outPre < inPre) return { ok: false, msg: 'In Pre. ≤ Out Pre. (Out Pre. debe ser mayor o igual).' };
+        return { ok: true };
+    }
+
+    /** Máximo permitido para Peso Recepción en packing fila index: Despacho Acopio de la fila (desde datos Visual en memoria o desde GET). Si no hay dato, devuelve null (no se valida tope). */
+    function getMaxPesoRecepcionPacking(indexFila) {
+        var ensayo = ensayoActual != null ? ensayoActual : currentEnsayoPacking;
+        if (ensayo == null) return null;
+        var visual = datosEnsayos.visual && datosEnsayos.visual[ensayo] && datosEnsayos.visual[ensayo].visual ? datosEnsayos.visual[ensayo].visual : [];
+        var row = visual[indexFila];
+        var despacho = row && (row.despacho_acopio != null ? row.despacho_acopio : row.despacho);
+        if (row && despacho != null && String(despacho).trim() !== '') {
+            var n = parseFloat(String(despacho).replace(',', '.'));
+            if (!isNaN(n)) return n;
+        }
+        var key = keyPacking(currentFechaPacking, currentEnsayoPacking);
+        if (despachoPorFilaDesdeGET[key] && despachoPorFilaDesdeGET[key][indexFila] != null) return despachoPorFilaDesdeGET[key][indexFila];
+        return null;
+    }
+
+    /** Validación Packing 2: Recep. ≥ In Gas. ≥ Out Gas. ≥ In Pre. ≥ Out Pre. Requiere todos llenos. Mensaje específico por par. */
     function validarPacking2Pesos(data) {
         const pr = parseFloat(String(data.peso_recepcion || '').replace(',', '.'));
         const pig = parseFloat(String(data.peso_ingreso_gasificado || '').replace(',', '.'));
@@ -1415,11 +2045,49 @@ document.addEventListener('DOMContentLoaded', () => {
         const pip = parseFloat(String(data.peso_ingreso_prefrio || '').replace(',', '.'));
         const psp = parseFloat(String(data.peso_salida_prefrio || '').replace(',', '.'));
         if (isNaN(pr) || isNaN(pig) || isNaN(psg) || isNaN(pip) || isNaN(psp)) return { ok: false, msg: 'Todos los pesos deben ser números.' };
-        if (pig > pr) return { ok: false, msg: 'Peso Ingreso Gasificado no debe ser mayor que Peso Recepción (debe ser menor o igual).' };
-        if (psg > pig) return { ok: false, msg: 'Peso Salida Gasificado debe ser menor o igual que Peso Ingreso Gasificado.' };
-        if (pip > psg) return { ok: false, msg: 'Peso Ingreso Prefrío debe ser menor o igual que Peso Salida Gasificado.' };
-        if (psp > pip) return { ok: false, msg: 'Peso Salida Prefrío debe ser menor o igual que Peso Ingreso Prefrío.' };
+        if (pig > pr) return { ok: false, msg: 'Recep. ≥ In Gas. (In Gas. debe ser menor o igual).' };
+        if (psg > pig) return { ok: false, msg: 'In Gas. ≥ Out Gas. (Out Gas. debe ser menor o igual).' };
+        if (pip > psg) return { ok: false, msg: 'Out Gas. ≥ In Pre. (In Pre. debe ser menor o igual).' };
+        if (psp > pip) return { ok: false, msg: 'In Pre. ≥ Out Pre. (Out Pre. debe ser menor o igual).' };
         return { ok: true };
+    }
+
+    /** Validación Packing 2 para editar: permite campos vacíos; los llenos deben ser números >= 0 y respetar orden Recep. ≥ In Gas. ≥ Out Gas. ≥ In Pre. ≥ Out Pre. Mensaje específico por par. */
+    function validarPacking2PesosOpcional(data) {
+        var nums = [
+            parseFloat(String(data.peso_recepcion || '').replace(',', '.')),
+            parseFloat(String(data.peso_ingreso_gasificado || '').replace(',', '.')),
+            parseFloat(String(data.peso_salida_gasificado || '').replace(',', '.')),
+            parseFloat(String(data.peso_ingreso_prefrio || '').replace(',', '.')),
+            parseFloat(String(data.peso_salida_prefrio || '').replace(',', '.'))
+        ];
+        var filled = [(data.peso_recepcion || '').trim(), (data.peso_ingreso_gasificado || '').trim(), (data.peso_salida_gasificado || '').trim(), (data.peso_ingreso_prefrio || '').trim(), (data.peso_salida_prefrio || '').trim()];
+        for (var i = 0; i < filled.length; i++) {
+            if (filled[i] && (isNaN(nums[i]) || nums[i] < 0)) return { ok: false, msg: 'Los pesos deben ser números mayores o iguales a 0.' };
+        }
+        if (!isNaN(nums[0]) && !isNaN(nums[1]) && nums[1] > nums[0]) return { ok: false, msg: 'Recep. ≥ In Gas. (In Gas. debe ser menor o igual).' };
+        if (!isNaN(nums[1]) && !isNaN(nums[2]) && nums[2] > nums[1]) return { ok: false, msg: 'In Gas. ≥ Out Gas. (Out Gas. debe ser menor o igual).' };
+        if (!isNaN(nums[2]) && !isNaN(nums[3]) && nums[3] > nums[2]) return { ok: false, msg: 'Out Gas. ≥ In Pre. (In Pre. debe ser menor o igual).' };
+        if (!isNaN(nums[3]) && !isNaN(nums[4]) && nums[4] > nums[3]) return { ok: false, msg: 'In Pre. ≥ Out Pre. (Out Pre. debe ser menor o igual).' };
+        return { ok: true };
+    }
+
+    /** Validación cadena pesos: Recep. ≥ In Gas. ≥ Out Gas. ≥ In Pre. ≥ Out Pre. valores = [recep, in_gas, out_gas, in_pre, out_pre]. Devuelve { valid, errors: [{ index, msg }] }. Vacíos se ignoran. */
+    function validarPesosPackingCadena(valores) {
+        var nums = valores.map(function (v) {
+            var s = String(v || '').trim();
+            if (s === '') return NaN;
+            return parseFloat(s.replace(',', '.'));
+        });
+        var errors = [];
+        if (!isNaN(nums[1]) && !isNaN(nums[0]) && nums[1] > nums[0]) errors.push({ index: 1, msg: 'Recep. ≥ In Gas. (In Gas. debe ser menor o igual).' });
+        if (!isNaN(nums[2]) && !isNaN(nums[1]) && nums[2] > nums[1]) errors.push({ index: 2, msg: 'In Gas. ≥ Out Gas. (Out Gas. debe ser menor o igual).' });
+        if (!isNaN(nums[3]) && !isNaN(nums[2]) && nums[3] > nums[2]) errors.push({ index: 3, msg: 'Out Gas. ≥ In Pre. (In Pre. debe ser menor o igual).' });
+        if (!isNaN(nums[4]) && !isNaN(nums[3]) && nums[4] > nums[3]) errors.push({ index: 4, msg: 'In Pre. ≥ Out Pre. (Out Pre. debe ser menor o igual).' });
+        for (var j = 0; j < nums.length; j++) {
+            if (!isNaN(nums[j]) && nums[j] < 0) errors.push({ index: j, msg: 'El peso debe ser ≥ 0.' });
+        }
+        return { valid: errors.length === 0, errors: errors };
     }
 
     /** Validación numérica: valor >= 0, no letras. Para listas de valores (ej. [recep, ing, sal, pre_in, pre_out]). */
@@ -1459,7 +2127,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'Cancelar',
             preConfirm: () => {
                 const val = { recepcion: document.getElementById('e_recep').value, ingreso_gasificado: document.getElementById('e_ing').value, salida_gasificado: document.getElementById('e_sal').value, ingreso_prefrio: document.getElementById('e_pre_in').value, salida_prefrio: document.getElementById('e_pre_out').value };
-                const res = validarPacking1Tiempos(val);
+                const res = validarPacking1TiemposOpcional(val);
                 if (!res.ok) { Swal.showValidationMessage(res.msg); return false; }
                 return val;
             }
@@ -1480,28 +2148,52 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'Cancelar',
             preConfirm: () => {
                 const val = { peso_recepcion: document.getElementById('e_p1').value, peso_ingreso_gasificado: document.getElementById('e_p2').value, peso_salida_gasificado: document.getElementById('e_p3').value, peso_ingreso_prefrio: document.getElementById('e_p4').value, peso_salida_prefrio: document.getElementById('e_p5').value };
-                const res = validarPacking2Pesos(val);
+                const res = validarPacking2PesosOpcional(val);
                 if (!res.ok) { Swal.showValidationMessage(res.msg); return false; }
+                var maxRecepcion = getMaxPesoRecepcionPacking(index);
+                if (maxRecepcion != null && (val.peso_recepcion || '').trim() !== '') {
+                    var prNum = parseFloat(String(val.peso_recepcion).replace(',', '.'));
+                    if (!isNaN(prNum) && prNum > maxRecepcion) {
+                        Swal.showValidationMessage('Te pasaste en pesos: Peso Recepción no puede ser mayor que el Despacho Acopio (máx. ' + maxRecepcion + '). Debe ser igual o menor.');
+                        return false;
+                    }
+                }
                 return val;
             }
         }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing2[index] = r.value; renderAllPackingRows(); } });
     }
     function editarFilaPacking3(index, dataActual) {
-        const labels = ['T.amb Recep','T.pulp Recep','T.amb In Gas','T.pulp In Gas','T.amb Out Gas','T.pulp Out Gas','T.amb In Pre','T.pulp In Pre','T.amb Out Pre','T.pulp Out Pre'];
-        const ids = ['e_t1','e_t2','e_t3','e_t4','e_t5','e_t6','e_t7','e_t8','e_t9','e_t10'];
-        const vals = [dataActual.t_amb_recep, dataActual.t_pulp_recep, dataActual.t_amb_ing, dataActual.t_pulp_ing, dataActual.t_amb_sal, dataActual.t_pulp_sal, dataActual.t_amb_pre_in, dataActual.t_pulp_pre_in, dataActual.t_amb_pre_out, dataActual.t_pulp_pre_out];
-        const inputs = ids.map((id, i) => `<input type="number" step="0.1" min="0" id="${id}" class="swal2-input" value="${vals[i] ?? ''}">`);
+        var stages = [
+            { name: 'Recepción', amb: (dataActual.t_amb_recep ?? ''), pulp: (dataActual.t_pulp_recep ?? '') },
+            { name: 'In Gas.', amb: (dataActual.t_amb_ing ?? ''), pulp: (dataActual.t_pulp_ing ?? '') },
+            { name: 'Out Gas.', amb: (dataActual.t_amb_sal ?? ''), pulp: (dataActual.t_pulp_sal ?? '') },
+            { name: 'In Pre.', amb: (dataActual.t_amb_pre_in ?? ''), pulp: (dataActual.t_pulp_pre_in ?? '') },
+            { name: 'Out Pre.', amb: (dataActual.t_amb_pre_out ?? ''), pulp: (dataActual.t_pulp_pre_out ?? '') }
+        ];
+        var idsAmb = ['e_t1','e_t3','e_t5','e_t7','e_t9'];
+        var idsPulp = ['e_t2','e_t4','e_t6','e_t8','e_t10'];
+        var html = '<div class="packing-modal-temp-2cols">';
+        stages.forEach(function (s, i) {
+            html += '<div class="temp-stage-row">';
+            html += '<div class="temp-stage-name">' + s.name + '</div>';
+            html += '<div class="temp-stage-fields">';
+            html += '<div class="temp-field"><label title="T° Ambiente"><i data-lucide="thermometer-sun" class="temp-icon"></i> T° Amb</label><input type="number" step="0.1" min="0" id="' + idsAmb[i] + '" class="swal2-input" value="' + (s.amb !== undefined && s.amb !== null ? s.amb : '') + '"></div>';
+            html += '<div class="temp-field"><label title="T° Pulpa"><i data-lucide="cherry" class="temp-icon"></i> T° Pulp</label><input type="number" step="0.1" min="0" id="' + idsPulp[i] + '" class="swal2-input" value="' + (s.pulp !== undefined && s.pulp !== null ? s.pulp : '') + '"></div>';
+            html += '</div></div>';
+        });
+        html += '</div>';
         var numFila = index + 1;
         Swal.fire({
             title: 'Editar Temperaturas (°C) — Fila #' + numFila,
-            customClass: { popup: 'packing-edit-modal' },
-            html: modalGrid(labels, inputs),
+            customClass: { popup: 'packing-edit-modal packing-edit-modal-temp' },
+            html: html,
             showCancelButton: true,
             confirmButtonText: 'Guardar',
             cancelButtonText: 'Cancelar',
+            didOpen: function () { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); },
             preConfirm: () => {
                 const v = [document.getElementById('e_t1').value, document.getElementById('e_t2').value, document.getElementById('e_t3').value, document.getElementById('e_t4').value, document.getElementById('e_t5').value, document.getElementById('e_t6').value, document.getElementById('e_t7').value, document.getElementById('e_t8').value, document.getElementById('e_t9').value, document.getElementById('e_t10').value];
-                const res = validarPackingNumericoRequerido(v);
+                const res = validarPackingNumericoOpcional(v);
                 if (!res.ok) { Swal.showValidationMessage(res.msg); return false; }
                 return { t_amb_recep: v[0], t_pulp_recep: v[1], t_amb_ing: v[2], t_pulp_ing: v[3], t_amb_sal: v[4], t_pulp_sal: v[5], t_amb_pre_in: v[6], t_pulp_pre_in: v[7], t_amb_pre_out: v[8], t_pulp_pre_out: v[9] };
             }
@@ -1521,7 +2213,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'Cancelar',
             preConfirm: () => {
                 const val = [document.getElementById('e_h0').value, document.getElementById('e_h1').value, document.getElementById('e_h2').value, document.getElementById('e_h3').value, document.getElementById('e_h4').value];
-                const res = validarPackingNumericoRequerido(val);
+                const res = validarPackingNumericoOpcional(val);
                 if (!res.ok) { Swal.showValidationMessage(res.msg); return false; }
                 return { recepcion: val[0], ingreso_gasificado: val[1], salida_gasificado: val[2], ingreso_prefrio: val[3], salida_prefrio: val[4] };
             }
@@ -1541,7 +2233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'Cancelar',
             preConfirm: () => {
                 const val = [document.getElementById('e_pr0').value, document.getElementById('e_pr1').value, document.getElementById('e_pr2').value, document.getElementById('e_pr3').value, document.getElementById('e_pr4').value];
-                const res = validarPackingNumericoRequerido(val);
+                const res = validarPackingNumericoOpcional(val);
                 if (!res.ok) { Swal.showValidationMessage(res.msg); return false; }
                 return { recepcion: val[0], ingreso_gasificado: val[1], salida_gasificado: val[2], ingreso_prefrio: val[3], salida_prefrio: val[4] };
             }
@@ -1561,48 +2253,50 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'Cancelar',
             preConfirm: () => {
                 const val = [document.getElementById('e_pf0').value, document.getElementById('e_pf1').value, document.getElementById('e_pf2').value, document.getElementById('e_pf3').value, document.getElementById('e_pf4').value];
-                const res = validarPackingNumericoRequerido(val);
-                if (!res.ok) { Swal.showValidationMessage(res.msg); return false; }
-                return { recepcion: val[0], ingreso_gasificado: val[1], salida_gasificado: val[2], ingreso_prefrio: val[3], salida_prefrio: val[4] };
-            }
-        }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing6[index] = r.value; renderAllPackingRows(); } });
-    }
-    function editarFilaPacking7(index, dataActual) {
-        const labels = ['Recep.','In Gas.','Out Gas.','In Pre.','Out Pre.'];
-        const v = [dataActual.recepcion, dataActual.ingreso_gasificado, dataActual.salida_gasificado, dataActual.ingreso_prefrio, dataActual.salida_prefrio];
-        const inputs = [0,1,2,3,4].map(i => `<input type="number" step="0.001" min="0" id="e_d${i}" class="swal2-input" value="${v[i] ?? ''}">`);
-        var numFila = index + 1;
-        Swal.fire({
-            title: 'Editar Déficit (Kpa) — Fila #' + numFila,
-            customClass: { popup: 'packing-edit-modal' },
-            html: modalGrid(labels, inputs),
-            showCancelButton: true,
-            confirmButtonText: 'Guardar',
-            cancelButtonText: 'Cancelar',
-            preConfirm: () => {
-                const val = [document.getElementById('e_d0').value, document.getElementById('e_d1').value, document.getElementById('e_d2').value, document.getElementById('e_d3').value, document.getElementById('e_d4').value];
                 const res = validarPackingNumericoOpcional(val);
                 if (!res.ok) { Swal.showValidationMessage(res.msg); return false; }
                 return { recepcion: val[0], ingreso_gasificado: val[1], salida_gasificado: val[2], ingreso_prefrio: val[3], salida_prefrio: val[4] };
             }
-        }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing7[index] = r.value; renderAllPackingRows(); } });
+        }).then(r => { if (r.isConfirmed && r.value) { datosPacking.packing6[index] = r.value; renderAllPackingRows(); } });
     }
     function editarFilaPacking8(index, dataActual) {
         var numFila = index + 1;
         Swal.fire({ title: 'Editar Observación — Fila #' + numFila, customClass: { popup: 'packing-edit-modal' }, input: 'text', inputValue: (dataActual.observacion || '').toString(), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' }).then(r => { if (r.isConfirmed && r.value !== undefined) { datosPacking.packing8[index] = { observacion: r.value }; renderAllPackingRows(); } });
     }
 
+    /** Devuelve { ok: true } o { ok: false, msg } si no hay fecha/ensayo seleccionados. Impide agregar filas de packing sin contexto. */
+    function requiereFechaYEnsayoPacking() {
+        const fechaEl = document.getElementById('view_fecha');
+        const ensayoEl = document.getElementById('view_ensayo_numero');
+        const fecha = (fechaEl && fechaEl.value) ? fechaEl.value.trim() : '';
+        const ensayo = (ensayoEl && ensayoEl.value) ? String(ensayoEl.value).trim() : '';
+        if (!fecha) return { ok: false, msg: 'Elige primero una fecha en la sección Packing.' };
+        if (!ensayo) return { ok: false, msg: 'Elige primero un ensayo en la sección Packing.' };
+        return { ok: true };
+    }
+
     // Agregar fila solo en esa sección; Replicar (en Pesos u otras) iguala todo a packing2 y copia última fila.
     const btnAddPacking1 = document.getElementById('btn-add-packing');
     if (btnAddPacking1) btnAddPacking1.addEventListener('click', () => {
+        const req = requiereFechaYEnsayoPacking();
+        if (!req.ok) { Swal.fire({ title: 'Faltan datos', text: req.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const recepcion = (document.getElementById('reg_packing_recepcion') && document.getElementById('reg_packing_recepcion').value) || '';
         const ingreso_gasificado = (document.getElementById('reg_packing_ingreso_gasificado') && document.getElementById('reg_packing_ingreso_gasificado').value) || '';
         const salida_gasificado = (document.getElementById('reg_packing_salida_gasificado') && document.getElementById('reg_packing_salida_gasificado').value) || '';
         const ingreso_prefrio = (document.getElementById('reg_packing_ingreso_prefrio') && document.getElementById('reg_packing_ingreso_prefrio').value) || '';
         const salida_prefrio = (document.getElementById('reg_packing_salida_prefrio') && document.getElementById('reg_packing_salida_prefrio').value) || '';
+        if (!recepcion.trim()) { Swal.fire({ title: 'Agregar fila', text: 'Complete al menos el primer campo (Recep.) para agregar la fila.', icon: 'info', confirmButtonColor: '#2f7cc0' }); return; }
         const data = { recepcion, ingreso_gasificado, salida_gasificado, ingreso_prefrio, salida_prefrio };
-        const res1 = validarPacking1Tiempos(data);
-        if (!res1.ok) { Swal.fire({ title: 'Validación', text: res1.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
+        var resTiempos = validarPacking1TiemposOpcional(data);
+        if (!resTiempos.ok) {
+            Swal.fire({
+                title: 'Orden de tiempos',
+                text: resTiempos.msg,
+                icon: 'warning',
+                confirmButtonColor: '#2f7cc0'
+            });
+            return;
+        }
         datosPacking.packing1.push(data);
         const tbody = document.getElementById('tbody-packing-1');
         if (tbody) agregarFilaPacking1(data, tbody, datosPacking.packing1.length);
@@ -1616,14 +2310,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnAddPacking2 = document.getElementById('btn-add-pesos');
     if (btnAddPacking2) btnAddPacking2.addEventListener('click', () => {
+        const req = requiereFechaYEnsayoPacking();
+        if (!req.ok) { Swal.fire({ title: 'Faltan datos', text: req.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const peso_recepcion = (document.getElementById('reg_packing_peso_recepcion') && document.getElementById('reg_packing_peso_recepcion').value) || '';
         const peso_ingreso_gasificado = (document.getElementById('reg_packing_peso_ingreso_gasificado') && document.getElementById('reg_packing_peso_ingreso_gasificado').value) || '';
         const peso_salida_gasificado = (document.getElementById('reg_packing_peso_salida_gasificado') && document.getElementById('reg_packing_peso_salida_gasificado').value) || '';
         const peso_ingreso_prefrio = (document.getElementById('reg_packing_peso_ingreso_prefrio') && document.getElementById('reg_packing_peso_ingreso_prefrio').value) || '';
         const peso_salida_prefrio = (document.getElementById('reg_packing_peso_salida_prefrio') && document.getElementById('reg_packing_peso_salida_prefrio').value) || '';
+        if (!String(peso_recepcion || '').trim()) { Swal.fire({ title: 'Agregar fila', text: 'Complete al menos el primer campo (Peso Recep.) para agregar la fila.', icon: 'info', confirmButtonColor: '#2f7cc0' }); return; }
+        var indexFila = datosPacking.packing2.length;
+        var maxRecepcion = getMaxPesoRecepcionPacking(indexFila);
+        if (maxRecepcion != null) {
+            var prNum = parseFloat(String(peso_recepcion).replace(',', '.'));
+            if (!isNaN(prNum) && prNum > maxRecepcion) {
+                Swal.fire({ title: 'Te pasaste en pesos', text: 'Peso Recepción no puede ser mayor que el Despacho Acopio (máx. ' + maxRecepcion + '). Debe ser igual o menor.', icon: 'warning', confirmButtonColor: '#2f7cc0' });
+                return;
+            }
+        }
         const data = { peso_recepcion, peso_ingreso_gasificado, peso_salida_gasificado, peso_ingreso_prefrio, peso_salida_prefrio };
-        const res2 = validarPacking2Pesos(data);
-        if (!res2.ok) { Swal.fire({ title: 'Validación', text: res2.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
+        var resCadena = validarPacking2PesosOpcional(data);
+        if (!resCadena.ok) {
+            Swal.fire({ title: 'Orden de pesos', text: resCadena.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' });
+            return;
+        }
         datosPacking.packing2.push(data);
         const tbody = document.getElementById('tbody-packing-pesos');
         if (tbody) agregarFilaPacking2(data, tbody, datosPacking.packing2.length);
@@ -1631,11 +2340,32 @@ document.addEventListener('DOMContentLoaded', () => {
         ['reg_packing_peso_recepcion','reg_packing_peso_ingreso_gasificado','reg_packing_peso_salida_gasificado','reg_packing_peso_ingreso_prefrio','reg_packing_peso_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     });
 
+    // Al salir del campo Peso Recepción: avisar si se pasó del máximo (Despacho Acopio). Sin refocus para que el OK cierre bien.
+    var elPesoRecepcion = document.getElementById('reg_packing_peso_recepcion');
+    if (elPesoRecepcion) {
+        elPesoRecepcion.addEventListener('blur', function () {
+            var indexFila = datosPacking.packing2.length;
+            var maxRecepcion = getMaxPesoRecepcionPacking(indexFila);
+            if (maxRecepcion == null) return;
+            var val = (this.value || '').trim();
+            if (!val) return;
+            var prNum = parseFloat(String(val).replace(',', '.'));
+            if (isNaN(prNum) || prNum <= maxRecepcion) return;
+            Swal.fire({ title: 'Te pasaste en pesos', text: 'Peso Recepción no puede ser mayor que el Despacho Acopio (máx. ' + maxRecepcion + '). Debe ser igual o menor.', icon: 'warning', confirmButtonColor: '#2f7cc0', allowOutsideClick: true });
+        });
+    }
+
     const btnAddPacking3 = document.getElementById('btn-add-temp');
     if (btnAddPacking3) btnAddPacking3.addEventListener('click', () => {
+        const req = requiereFechaYEnsayoPacking();
+        if (!req.ok) { Swal.fire({ title: 'Faltan datos', text: req.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const firstVal = get('reg_packing_temp_amb_recepcion').trim();
+        if (!firstVal) { Swal.fire({ title: 'Agregar fila', text: 'Complete al menos el primer campo (T° Amb. Recep.) para agregar la fila.', icon: 'info', confirmButtonColor: '#2f7cc0' }); return; }
+        const n = parseFloat(firstVal.replace(',', '.'));
+        if (isNaN(n) || n < 0) { Swal.fire({ title: 'Validación', text: 'El valor debe ser un número mayor o igual a 0.', icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const vals = [get('reg_packing_temp_amb_recepcion'), get('reg_packing_temp_pulp_recepcion'), get('reg_packing_temp_amb_ingreso_gas'), get('reg_packing_temp_pulp_ingreso_gas'), get('reg_packing_temp_amb_salida_gas'), get('reg_packing_temp_pulp_salida_gas'), get('reg_packing_temp_amb_ingreso_pre'), get('reg_packing_temp_pulp_ingreso_pre'), get('reg_packing_temp_amb_salida_pre'), get('reg_packing_temp_pulp_salida_pre')];
-        const res3 = validarPackingNumericoRequerido(vals);
+        const res3 = validarPackingNumericoOpcional(vals);
         if (!res3.ok) { Swal.fire({ title: 'Validación', text: res3.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const data = { t_amb_recep: vals[0], t_pulp_recep: vals[1], t_amb_ing: vals[2], t_pulp_ing: vals[3], t_amb_sal: vals[4], t_pulp_sal: vals[5], t_amb_pre_in: vals[6], t_pulp_pre_in: vals[7], t_amb_pre_out: vals[8], t_pulp_pre_out: vals[9] };
         datosPacking.packing3.push(data);
@@ -1647,9 +2377,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnAddPacking4 = document.getElementById('btn-add-packing-humedad');
     if (btnAddPacking4) btnAddPacking4.addEventListener('click', () => {
+        const req = requiereFechaYEnsayoPacking();
+        if (!req.ok) { Swal.fire({ title: 'Faltan datos', text: req.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const firstVal = get('reg_packing_humedad_recepcion').trim();
+        if (!firstVal) { Swal.fire({ title: 'Agregar fila', text: 'Complete al menos el primer campo (Humedad Recep.) para agregar la fila.', icon: 'info', confirmButtonColor: '#2f7cc0' }); return; }
+        const n = parseFloat(firstVal.replace(',', '.'));
+        if (isNaN(n) || n < 0) { Swal.fire({ title: 'Validación', text: 'El valor debe ser un número mayor o igual a 0.', icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const vals = [get('reg_packing_humedad_recepcion'), get('reg_packing_humedad_ingreso_gasificado'), get('reg_packing_humedad_salida_gasificado'), get('reg_packing_humedad_ingreso_prefrio'), get('reg_packing_humedad_salida_prefrio')];
-        const res4 = validarPackingNumericoRequerido(vals);
+        const res4 = validarPackingNumericoOpcional(vals);
         if (!res4.ok) { Swal.fire({ title: 'Validación', text: res4.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const data = { recepcion: vals[0], ingreso_gasificado: vals[1], salida_gasificado: vals[2], ingreso_prefrio: vals[3], salida_prefrio: vals[4] };
         datosPacking.packing4.push(data);
@@ -1661,9 +2397,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnAddPacking5 = document.getElementById('btn-add-packing-presion');
     if (btnAddPacking5) btnAddPacking5.addEventListener('click', () => {
+        const req = requiereFechaYEnsayoPacking();
+        if (!req.ok) { Swal.fire({ title: 'Faltan datos', text: req.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const firstVal = get('reg_packing_presion_recepcion').trim();
+        if (!firstVal) { Swal.fire({ title: 'Agregar fila', text: 'Complete al menos el primer campo (Presión Recep.) para agregar la fila.', icon: 'info', confirmButtonColor: '#2f7cc0' }); return; }
+        const n = parseFloat(firstVal.replace(',', '.'));
+        if (isNaN(n) || n < 0) { Swal.fire({ title: 'Validación', text: 'El valor debe ser un número mayor o igual a 0.', icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const vals = [get('reg_packing_presion_recepcion'), get('reg_packing_presion_ingreso_gasificado'), get('reg_packing_presion_salida_gasificado'), get('reg_packing_presion_ingreso_prefrio'), get('reg_packing_presion_salida_prefrio')];
-        const res5 = validarPackingNumericoRequerido(vals);
+        const res5 = validarPackingNumericoOpcional(vals);
         if (!res5.ok) { Swal.fire({ title: 'Validación', text: res5.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const data = { recepcion: vals[0], ingreso_gasificado: vals[1], salida_gasificado: vals[2], ingreso_prefrio: vals[3], salida_prefrio: vals[4] };
         datosPacking.packing5.push(data);
@@ -1675,9 +2417,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnAddPacking6 = document.getElementById('btn-add-packing-presion-fruta');
     if (btnAddPacking6) btnAddPacking6.addEventListener('click', () => {
+        const req = requiereFechaYEnsayoPacking();
+        if (!req.ok) { Swal.fire({ title: 'Faltan datos', text: req.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
+        const firstVal = get('reg_packing_presion_fruta_recepcion').trim();
+        if (!firstVal) { Swal.fire({ title: 'Agregar fila', text: 'Complete al menos el primer campo (Presión fruta Recep.) para agregar la fila.', icon: 'info', confirmButtonColor: '#2f7cc0' }); return; }
+        const n = parseFloat(firstVal.replace(',', '.'));
+        if (isNaN(n) || n < 0) { Swal.fire({ title: 'Validación', text: 'El valor debe ser un número mayor o igual a 0.', icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const vals = [get('reg_packing_presion_fruta_recepcion'), get('reg_packing_presion_fruta_ingreso_gasificado'), get('reg_packing_presion_fruta_salida_gasificado'), get('reg_packing_presion_fruta_ingreso_prefrio'), get('reg_packing_presion_fruta_salida_prefrio')];
-        const res6 = validarPackingNumericoRequerido(vals);
+        const res6 = validarPackingNumericoOpcional(vals);
         if (!res6.ok) { Swal.fire({ title: 'Validación', text: res6.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const data = { recepcion: vals[0], ingreso_gasificado: vals[1], salida_gasificado: vals[2], ingreso_prefrio: vals[3], salida_prefrio: vals[4] };
         datosPacking.packing6.push(data);
@@ -1687,22 +2435,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ['reg_packing_presion_fruta_recepcion','reg_packing_presion_fruta_ingreso_gasificado','reg_packing_presion_fruta_salida_gasificado','reg_packing_presion_fruta_ingreso_prefrio','reg_packing_presion_fruta_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     });
 
-    const btnAddPacking7 = document.getElementById('btn-add-deficit');
-    if (btnAddPacking7) btnAddPacking7.addEventListener('click', () => {
-        const get = id => (document.getElementById(id) && document.getElementById(id).value) || '';
-        const vals = [get('reg_packing_deficit_recepcion'), get('reg_packing_deficit_ingreso_gasificado'), get('reg_packing_deficit_salida_gasificado'), get('reg_packing_deficit_ingreso_prefrio'), get('reg_packing_deficit_salida_prefrio')];
-        const res7 = validarPackingNumericoOpcional(vals);
-        if (!res7.ok) { Swal.fire({ title: 'Validación', text: res7.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
-        const data = { recepcion: vals[0], ingreso_gasificado: vals[1], salida_gasificado: vals[2], ingreso_prefrio: vals[3], salida_prefrio: vals[4] };
-        datosPacking.packing7.push(data);
-        const tbody = document.getElementById('tbody-packing-deficit');
-        if (tbody) agregarFilaPacking7(data, tbody, datosPacking.packing7.length);
-        actualizarContadorPacking('next_clam_deficit', datosPacking.packing7.length);
-        ['reg_packing_deficit_recepcion','reg_packing_deficit_ingreso_gasificado','reg_packing_deficit_salida_gasificado','reg_packing_deficit_ingreso_prefrio','reg_packing_deficit_salida_prefrio'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    });
-
     const btnAddPacking8 = document.getElementById('btn-add-packing-obs');
     if (btnAddPacking8) btnAddPacking8.addEventListener('click', () => {
+        const req = requiereFechaYEnsayoPacking();
+        if (!req.ok) { Swal.fire({ title: 'Faltan datos', text: req.msg, icon: 'warning', confirmButtonColor: '#2f7cc0' }); return; }
         const observacion = (document.getElementById('reg_packing_obs_texto') && document.getElementById('reg_packing_obs_texto').value) || '';
         datosPacking.packing8.push({ observacion });
         const tbody = document.getElementById('tbody-packing-obs');
@@ -1728,11 +2464,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const tbodyJarras = document.getElementById('tbody-jarras');
             if (tbodyJarras) {
                 tbodyJarras.innerHTML = '';
-                datos.jarras.forEach((item, index) => {
+                (datos.jarras || []).forEach((item, index) => {
+                    if (item && (item.tiempo == null || item.tiempo === '') && (item.inicio || item.termino)) {
+                        item.tiempo = calcularTiempoEmpleado(item.inicio || '', item.termino || '');
+                    }
                     agregarFilaJarras(item, tbodyJarras, index + 1);
                 });
-                actualizarContador('next_row_jarras', datos.jarras.length);
+                actualizarContador('next_row_jarras', (datos.jarras || []).length);
             }
+            actualizarCampoNJarraSegunTipo();
             
             const tbodyTemp = document.getElementById('tbody-temperaturas');
             if (tbodyTemp) {
@@ -1855,13 +2595,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function agregarFilaJarras(data, tbody, rowNum) {
+        const tiempoMostrar = (data.tiempo != null && data.tiempo !== '') ? data.tiempo : calcularTiempoEmpleado(data.inicio || '', data.termino || '');
         const row = document.createElement('tr');
         row.setAttribute('data-row', rowNum);
         row.setAttribute('data-jarra', data.jarra);
         row.setAttribute('data-tipo', data.tipo);
         row.setAttribute('data-inicio', data.inicio);
         row.setAttribute('data-termino', data.termino);
-        row.setAttribute('data-tiempo', data.tiempo);
+        row.setAttribute('data-tiempo', tiempoMostrar);
 
         row.innerHTML = `
             <td class="row-id">${rowNum}</td>
@@ -1869,7 +2610,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <td>${data.tipo === 'C' ? 'Cosecha' : (data.tipo === 'T' ? 'Traslado' : data.tipo)}</td>
             <td>${data.inicio}</td>
             <td>${data.termino}</td>
-            <td>${data.tiempo}</td>
+            <td>${tiempoMostrar}</td>
             <td>
                 <button type="button" class="btn-edit-row" title="Editar">
                     <i data-lucide="pencil"></i>
@@ -2156,59 +2897,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Editar fila: Visual, Jarras, Temperaturas, Tiempos, Humedad, Presión, Observación ---
     function editarFilaVisual(clamNum, dataActual) {
+        var html = '<div class="packing-modal-grid">' +
+            '<div class="packing-modal-field"><label>N° Jarra:</label><input type="number" id="edit_jarra" class="swal2-input" value="' + (dataActual.jarra || '') + '"></div>' +
+            '<div class="packing-modal-field"><label>Peso 1 (g):</label><input type="number" id="edit_p1" class="swal2-input" step="0.1" value="' + (dataActual.p1 || '') + '"></div>' +
+            '<div class="packing-modal-field"><label>Peso 2 (g):</label><input type="number" id="edit_p2" class="swal2-input" step="0.1" value="' + (dataActual.p2 || '') + '"></div>' +
+            '<div class="packing-modal-field"><label>Llegada Acopio (g):</label><input type="number" id="edit_llegada" class="swal2-input" step="0.1" value="' + (dataActual.llegada || '') + '"></div>' +
+            '<div class="packing-modal-field"><label>Despacho Acopio (g):</label><input type="number" id="edit_despacho" class="swal2-input" step="0.1" value="' + (dataActual.despacho || '') + '"></div>' +
+            '</div>';
         Swal.fire({
             title: `Editar Registro #${clamNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">N° Jarra:</label>
-                        <input type="number" id="edit_jarra" class="swal2-input" value="${dataActual.jarra}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Peso 1 (g):</label>
-                        <input type="number" id="edit_p1" class="swal2-input" step="0.1" value="${dataActual.p1}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Peso 2 (g):</label>
-                        <input type="number" id="edit_p2" class="swal2-input" step="0.1" value="${dataActual.p2}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Llegada Acopio (g):</label>
-                        <input type="number" id="edit_llegada" class="swal2-input" step="0.1" value="${dataActual.llegada}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Despacho Acopio (g):</label>
-                        <input type="number" id="edit_despacho" class="swal2-input" step="0.1" value="${dataActual.despacho}" style="width: 90%; margin: 0;">
-                    </div>
-                </div>
-            `,
+            customClass: { popup: 'packing-edit-modal' },
+            html: html,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
             cancelButtonText: 'Cancelar',
             preConfirm: () => {
                 const jarra = String(document.getElementById('edit_jarra').value || '').trim();
-                const p1 = document.getElementById('edit_p1').value;
-                const p2 = document.getElementById('edit_p2').value;
-                const llegada = document.getElementById('edit_llegada').value;
-                const despacho = document.getElementById('edit_despacho').value;
+                const p1 = document.getElementById('edit_p1').value || '';
+                const p2 = document.getElementById('edit_p2').value || '';
+                const llegada = document.getElementById('edit_llegada').value || '';
+                const despacho = document.getElementById('edit_despacho').value || '';
                 if (jarra !== '' && !esNumeroPositivoEntero(jarra)) {
                     Swal.showValidationMessage('N° Jarra debe ser un número entero positivo.');
                     return undefined;
                 }
-                if (p1 !== '' && p2 !== '') {
-                    const n1 = Number(p1), n2 = Number(p2);
-                    if (Number.isNaN(n2) || n2 > n1) {
-                        Swal.showValidationMessage('Peso 2 debe ser menor o igual que Peso 1.');
-                        return undefined;
-                    }
-                }
-                if (llegada !== '' && despacho !== '') {
-                    const nL = Number(llegada), nD = Number(despacho);
-                    if (Number.isNaN(nD) || nD > nL) {
-                        Swal.showValidationMessage('Despacho acopio debe ser ≤ Llegada acopio.');
-                        return undefined;
-                    }
+                var res = validarVisualPesosOrden({ p1, p2, llegada, despacho });
+                if (!res.ok) {
+                    Swal.showValidationMessage(res.msg);
+                    return undefined;
                 }
                 return { jarra, p1, p2, llegada, despacho };
             }
@@ -2230,9 +2947,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function editarFilaJarras(rowNum, dataActual) {
+        var jarraDisplay = (dataActual.jarra != null && dataActual.jarra !== '') ? String(dataActual.jarra) : '—';
         var htmlJarra = '<div class="packing-modal-grid">' +
-            '<div class="packing-modal-field"><label>N° Jarra:</label><input type="number" id="edit_jarra" class="swal2-input" value="' + (dataActual.jarra || '') + '"></div>' +
-            '<div class="packing-modal-field"><label>Tipo:</label><select id="edit_tipo" class="swal2-input"><option value="C"' + (dataActual.tipo === 'C' ? ' selected' : '') + '>Cosecha</option><option value="T"' + (dataActual.tipo === 'T' ? ' selected' : '') + '>Traslado</option></select></div>' +
+            '<div class="packing-modal-field"><label>N° Jarra:</label><span class="swal2-input" style="display:inline-block;background:#eee;color:#555;">' + jarraDisplay + '</span></div>' +
+            '<div class="packing-modal-field"><label>Tipo:</label><select id="edit_tipo" class="swal2-input" disabled style="background:#eee;color:#555;cursor:not-allowed;"><option value="C"' + (dataActual.tipo === 'C' ? ' selected' : '') + '>Cosecha</option><option value="T"' + (dataActual.tipo === 'T' ? ' selected' : '') + '>Traslado</option></select></div>' +
             '<div class="packing-modal-field"><label>Hora Inicio:</label><input type="time" id="edit_inicio" class="swal2-input" value="' + (dataActual.inicio || '') + '"></div>' +
             '<div class="packing-modal-field"><label>Hora Término:</label><input type="time" id="edit_termino" class="swal2-input" value="' + (dataActual.termino || '') + '"></div>' +
             '</div>';
@@ -2245,83 +2963,122 @@ document.addEventListener('DOMContentLoaded', () => {
             showCancelButton: true,
             cancelButtonText: 'Cancelar',
             preConfirm: () => {
-                const jarra = String(document.getElementById('edit_jarra').value || '').trim();
-                const tipo = document.getElementById('edit_tipo').value;
+                const jarra = (dataActual.jarra != null ? String(dataActual.jarra) : '').trim();
+                const tipo = (document.getElementById('edit_tipo').value || '').trim();
                 const inicio = document.getElementById('edit_inicio').value;
                 const termino = document.getElementById('edit_termino').value;
-                if (!esNumeroPositivoEntero(jarra)) {
-                    Swal.showValidationMessage('N° Jarra debe ser un número entero positivo.');
+                if (tipo !== 'C' && tipo !== 'T') {
+                    Swal.showValidationMessage('El tipo debe ser Cosecha o Traslado.');
+                    return undefined;
+                }
+                if (tipo === 'C' && jarra !== '' && !esNumeroPositivoEntero(jarra)) {
+                    Swal.showValidationMessage('En Cosecha, N° Jarra debe ser un número entero positivo o vacío.');
+                    return undefined;
+                }
+                if (tipo === 'T' && !jarra) {
+                    Swal.showValidationMessage('En Traslado debes elegir una jarra o viaje grupal (ej. 1-2).');
                     return undefined;
                 }
                 if (inicio && termino && !tiempoMenorOIgual(inicio, termino)) {
                     Swal.showValidationMessage('La hora de término debe ser mayor o igual que la de inicio.');
                     return undefined;
                 }
+                // No duplicar: misma N° Jarra + mismo TIPO en otra fila (excluir la fila que estamos editando)
+                const normJ = (v) => (v == null || v === '') ? '' : String(v).trim();
+                const lista = datosEnsayos[tipoActual][ensayoActual].jarras || [];
+                const duplicado = lista.some(function (j, i) {
+                    return i !== rowNum - 1 && normJ(j.jarra) === normJ(jarra) && j.tipo === tipo;
+                });
+                if (duplicado) {
+                    const tipoLabel = tipo === 'C' ? 'Cosecha' : 'Traslado';
+                    Swal.showValidationMessage('Ya existe otra fila con N° Jarra "' + (jarra || '(vacío)') + '" y tipo "' + tipoLabel + '".');
+                    return undefined;
+                }
+                // Traslado: inicio debe ser >= término de Cosecha (misma N° Jarra). Si editamos Cosecha y hay conflicto, se elimina la fila de Traslado (más seguro que formatear a 0).
+                var listaEditada = lista.map(function (j, i) {
+                    return i === rowNum - 1 ? { jarra: jarra, tipo: tipo, inicio: inicio, termino: termino } : j;
+                });
+                var resOrdenEdit = validarOrdenCosechaTrasladoJarras(listaEditada);
+                var listaFinal = listaEditada;
+                var trasladosEliminados = 0;
+                if (!resOrdenEdit.ok && tipo === 'C' && jarra) {
+                    var jarraNorm = String(jarra).trim();
+                    listaFinal = listaEditada.filter(function (j) {
+                        if (j.tipo !== 'T') return true;
+                        var idsT = idsDeJarraTraslado(j.jarra);
+                        var aplicaAJarra = idsT.indexOf(jarraNorm) >= 0;
+                        if (!aplicaAJarra) return true;
+                        if (!j.inicio || !termino) return true;
+                        if (tiempoEnMinutos(j.inicio) < tiempoEnMinutos(termino)) {
+                            trasladosEliminados++;
+                            return false;
+                        }
+                        return true;
+                    });
+                } else if (!resOrdenEdit.ok) {
+                    Swal.showValidationMessage(resOrdenEdit.msg);
+                    return undefined;
+                }
                 const tiempo = calcularTiempoEmpleado(inicio, termino);
-                return { jarra, tipo, inicio, termino, tiempo };
+                return { jarra, tipo, inicio, termino, tiempo, listaFinal: listaFinal, trasladosEliminados: trasladosEliminados };
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                const { jarra, tipo, inicio, termino, tiempo } = result.value;
-                datosEnsayos[tipoActual][ensayoActual].jarras[rowNum - 1] = { jarra, tipo, inicio, termino, tiempo };
+                const v = result.value;
+                const { jarra, tipo, inicio, termino, tiempo, listaFinal, trasladosEliminados } = v;
+                if (trasladosEliminados && listaFinal) {
+                    datosEnsayos[tipoActual][ensayoActual].jarras = listaFinal;
+                } else {
+                    datosEnsayos[tipoActual][ensayoActual].jarras[rowNum - 1] = { jarra, tipo, inicio, termino, tiempo };
+                }
                 restaurarDatosEnsayo(tipoActual, ensayoActual);
-                
+                if (trasladosEliminados) actualizarCampoNJarraSegunTipo();
+                var msg = trasladosEliminados
+                    ? (trasladosEliminados === 1
+                        ? 'Se eliminó la fila de Traslado de la N° Jarra ' + (v.jarra || '') + ' para permitir el cambio en Cosecha. Puedes volver a agregar Traslado si lo necesitas.'
+                        : 'Se eliminaron ' + trasladosEliminados + ' filas de Traslado para permitir el cambio en Cosecha. Puedes volver a agregar Traslado si lo necesitas.')
+                    : 'Jarra actualizada correctamente';
                 Swal.fire({
-                    title: 'Actualizado',
-                    text: 'Jarra actualizada correctamente',
+                    title: trasladosEliminados ? 'Cosecha actualizada' : 'Actualizado',
+                    text: msg,
                     icon: 'success',
-                    timer: 1500,
-                    showConfirmButton: false
+                    timer: trasladosEliminados ? 3500 : 1500,
+                    showConfirmButton: !!trasladosEliminados
                 });
             }
         });
     }
 
     function editarFilaTemperaturas(clamNum, dataActual) {
+        var stages = [
+            { name: 'Inicio', amb: (dataActual.inicio_amb ?? ''), pulp: (dataActual.inicio_pul ?? '') },
+            { name: 'Término', amb: (dataActual.termino_amb ?? ''), pulp: (dataActual.termino_pul ?? '') },
+            { name: 'Llegada', amb: (dataActual.llegada_amb ?? ''), pulp: (dataActual.llegada_pul ?? '') },
+            { name: 'Despacho', amb: (dataActual.despacho_amb ?? ''), pulp: (dataActual.despacho_pul ?? '') }
+        ];
+        var idsAmb = ['edit_inicio_amb', 'edit_termino_amb', 'edit_llegada_amb', 'edit_despacho_amb'];
+        var idsPulp = ['edit_inicio_pul', 'edit_termino_pul', 'edit_llegada_pul', 'edit_despacho_pul'];
+        var html = '<div class="packing-modal-temp-2cols">';
+        stages.forEach(function (s, i) {
+            html += '<div class="temp-stage-row">';
+            html += '<div class="temp-stage-name">' + s.name + '</div>';
+            html += '<div class="temp-stage-fields">';
+            html += '<div class="temp-field"><label title="T° Ambiente"><i data-lucide="thermometer-sun" class="temp-icon"></i> T° Amb</label><input type="number" step="0.1" min="0" id="' + idsAmb[i] + '" class="swal2-input" value="' + (s.amb !== undefined && s.amb !== null ? s.amb : '') + '"></div>';
+            html += '<div class="temp-field"><label title="T° Pulpa"><i data-lucide="cherry" class="temp-icon"></i> T° Pulp</label><input type="number" step="0.1" min="0" id="' + idsPulp[i] + '" class="swal2-input" value="' + (s.pulp !== undefined && s.pulp !== null ? s.pulp : '') + '"></div>';
+            html += '</div></div>';
+        });
+        html += '</div>';
         Swal.fire({
-            title: `Editar Temperaturas #${clamNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Inicio - Ambiente (°C):</label>
-                        <input type="number" id="edit_inicio_amb" class="swal2-input" step="0.1" value="${dataActual.inicio_amb || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Inicio - Pulpa (°C):</label>
-                        <input type="number" id="edit_inicio_pul" class="swal2-input" step="0.1" value="${dataActual.inicio_pul || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Término - Ambiente (°C):</label>
-                        <input type="number" id="edit_termino_amb" class="swal2-input" step="0.1" value="${dataActual.termino_amb || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Término - Pulpa (°C):</label>
-                        <input type="number" id="edit_termino_pul" class="swal2-input" step="0.1" value="${dataActual.termino_pul || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Llegada - Ambiente (°C):</label>
-                        <input type="number" id="edit_llegada_amb" class="swal2-input" step="0.1" value="${dataActual.llegada_amb || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Llegada - Pulpa (°C):</label>
-                        <input type="number" id="edit_llegada_pul" class="swal2-input" step="0.1" value="${dataActual.llegada_pul || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Despacho - Ambiente (°C):</label>
-                        <input type="number" id="edit_despacho_amb" class="swal2-input" step="0.1" value="${dataActual.despacho_amb || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Despacho - Pulpa (°C):</label>
-                        <input type="number" id="edit_despacho_pul" class="swal2-input" step="0.1" value="${dataActual.despacho_pul || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                </div>
-            `,
+            title: `Editar Temperaturas (°C) — Fila #${clamNum}`,
+            customClass: { popup: 'packing-edit-modal packing-edit-modal-temp' },
+            html: html,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
             cancelButtonText: 'Cancelar',
+            didOpen: function () { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); },
             preConfirm: () => {
-                const campos = ['edit_inicio_amb','edit_inicio_pul','edit_termino_amb','edit_termino_pul','edit_llegada_amb','edit_llegada_pul','edit_despacho_amb','edit_despacho_pul'];
+                const campos = ['edit_inicio_amb', 'edit_inicio_pul', 'edit_termino_amb', 'edit_termino_pul', 'edit_llegada_amb', 'edit_llegada_pul', 'edit_despacho_amb', 'edit_despacho_pul'];
                 const vals = {};
                 for (const id of campos) {
                     const v = String(document.getElementById(id).value || '').trim();
@@ -2359,32 +3116,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function editarFilaTiempos(clamNum, dataActual) {
+        var v = function (x) { return (x != null && x !== '') ? x : ''; };
+        var html = '<div class="packing-modal-grid">' +
+            '<div class="packing-modal-field"><label>Inicio Cosecha:</label><input type="time" id="edit_inicio" class="swal2-input" value="' + v(dataActual.inicio) + '"></div>' +
+            '<div class="packing-modal-field"><label>Pérdida Peso:</label><input type="time" id="edit_perdida" class="swal2-input" value="' + v(dataActual.perdida) + '"></div>' +
+            '<div class="packing-modal-field"><label>Término Cosecha:</label><input type="time" id="edit_termino" class="swal2-input" value="' + v(dataActual.termino) + '"></div>' +
+            '<div class="packing-modal-field"><label>Llegada Acopio:</label><input type="time" id="edit_llegada" class="swal2-input" value="' + v(dataActual.llegada) + '"></div>' +
+            '<div class="packing-modal-field"><label>Despacho Acopio:</label><input type="time" id="edit_despacho" class="swal2-input" value="' + v(dataActual.despacho) + '"></div>' +
+            '</div>';
         Swal.fire({
             title: `Editar Tiempos #${clamNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Inicio Cosecha:</label>
-                        <input type="time" id="edit_inicio" class="swal2-input" value="${dataActual.inicio || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Pérdida Peso:</label>
-                        <input type="time" id="edit_perdida" class="swal2-input" value="${dataActual.perdida || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Término Cosecha:</label>
-                        <input type="time" id="edit_termino" class="swal2-input" value="${dataActual.termino || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Llegada Acopio:</label>
-                        <input type="time" id="edit_llegada" class="swal2-input" value="${dataActual.llegada || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Despacho Acopio:</label>
-                        <input type="time" id="edit_despacho" class="swal2-input" value="${dataActual.despacho || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                </div>
-            `,
+            customClass: { popup: 'packing-edit-modal' },
+            html: html,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
@@ -2395,12 +3138,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const termino = document.getElementById('edit_termino').value || '';
                 const llegada = document.getElementById('edit_llegada').value || '';
                 const despacho = document.getElementById('edit_despacho').value || '';
-                const orden = [inicio, perdida, termino, llegada, despacho];
-                for (let i = 0; i < orden.length - 1; i++) {
-                    if (orden[i] && orden[i + 1] && !tiempoMenorOIgual(orden[i], orden[i + 1])) {
-                        Swal.showValidationMessage('Cada hora debe ser mayor o igual a la anterior (orden: Inicio → Pérdida → Término → Llegada → Despacho).');
-                        return undefined;
-                    }
+                var res = validarTiemposMuestraOrden({ inicio, perdida, termino, llegada, despacho });
+                if (!res.ok) {
+                    Swal.showValidationMessage(res.msg);
+                    return undefined;
                 }
                 return { inicio, perdida, termino, llegada, despacho };
             }
@@ -2421,28 +3162,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function editarFilaHumedad(clamNum, dataActual) {
+        var v = function (x) { return (x != null && x !== '') ? x : ''; };
+        var html = '<div class="packing-modal-grid">' +
+            '<div class="packing-modal-field"><label>Inicio (%):</label><input type="number" id="edit_inicio" class="swal2-input" step="0.1" value="' + v(dataActual.inicio) + '"></div>' +
+            '<div class="packing-modal-field"><label>Término (%):</label><input type="number" id="edit_termino" class="swal2-input" step="0.1" value="' + v(dataActual.termino) + '"></div>' +
+            '<div class="packing-modal-field"><label>Llegada (%):</label><input type="number" id="edit_llegada" class="swal2-input" step="0.1" value="' + v(dataActual.llegada) + '"></div>' +
+            '<div class="packing-modal-field"><label>Despacho (%):</label><input type="number" id="edit_despacho" class="swal2-input" step="0.1" value="' + v(dataActual.despacho) + '"></div>' +
+            '</div>';
         Swal.fire({
             title: `Editar Humedad #${clamNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Inicio (%):</label>
-                        <input type="number" id="edit_inicio" class="swal2-input" step="0.1" value="${dataActual.inicio || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Término (%):</label>
-                        <input type="number" id="edit_termino" class="swal2-input" step="0.1" value="${dataActual.termino || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Llegada (%):</label>
-                        <input type="number" id="edit_llegada" class="swal2-input" step="0.1" value="${dataActual.llegada || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Despacho (%):</label>
-                        <input type="number" id="edit_despacho" class="swal2-input" step="0.1" value="${dataActual.despacho || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                </div>
-            `,
+            customClass: { popup: 'packing-edit-modal' },
+            html: html,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
@@ -2481,28 +3211,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function editarFilaPresionAmbiente(clamNum, dataActual) {
+        var v = function (x) { return (x != null && x !== '') ? x : ''; };
+        var html = '<div class="packing-modal-grid">' +
+            '<div class="packing-modal-field"><label>Inicio (kPa):</label><input type="number" id="edit_inicio" class="swal2-input" step="0.001" value="' + v(dataActual.inicio) + '"></div>' +
+            '<div class="packing-modal-field"><label>Término (kPa):</label><input type="number" id="edit_termino" class="swal2-input" step="0.001" value="' + v(dataActual.termino) + '"></div>' +
+            '<div class="packing-modal-field"><label>Llegada (kPa):</label><input type="number" id="edit_llegada" class="swal2-input" step="0.001" value="' + v(dataActual.llegada) + '"></div>' +
+            '<div class="packing-modal-field"><label>Despacho (kPa):</label><input type="number" id="edit_despacho" class="swal2-input" step="0.001" value="' + v(dataActual.despacho) + '"></div>' +
+            '</div>';
         Swal.fire({
             title: `Editar Presión Ambiente #${clamNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Inicio (kPa):</label>
-                        <input type="number" id="edit_inicio" class="swal2-input" step="0.001" value="${dataActual.inicio || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Término (kPa):</label>
-                        <input type="number" id="edit_termino" class="swal2-input" step="0.001" value="${dataActual.termino || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Llegada (kPa):</label>
-                        <input type="number" id="edit_llegada" class="swal2-input" step="0.001" value="${dataActual.llegada || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Despacho (kPa):</label>
-                        <input type="number" id="edit_despacho" class="swal2-input" step="0.001" value="${dataActual.despacho || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                </div>
-            `,
+            customClass: { popup: 'packing-edit-modal' },
+            html: html,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
@@ -2541,28 +3260,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function editarFilaPresionFruta(clamNum, dataActual) {
+        var v = function (x) { return (x != null && x !== '') ? x : ''; };
+        var html = '<div class="packing-modal-grid">' +
+            '<div class="packing-modal-field"><label>Inicio (kPa):</label><input type="number" id="edit_inicio" class="swal2-input" step="0.001" value="' + v(dataActual.inicio) + '"></div>' +
+            '<div class="packing-modal-field"><label>Término (kPa):</label><input type="number" id="edit_termino" class="swal2-input" step="0.001" value="' + v(dataActual.termino) + '"></div>' +
+            '<div class="packing-modal-field"><label>Llegada (kPa):</label><input type="number" id="edit_llegada" class="swal2-input" step="0.001" value="' + v(dataActual.llegada) + '"></div>' +
+            '<div class="packing-modal-field"><label>Despacho (kPa):</label><input type="number" id="edit_despacho" class="swal2-input" step="0.001" value="' + v(dataActual.despacho) + '"></div>' +
+            '</div>';
         Swal.fire({
             title: `Editar Presión Fruta #${clamNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Inicio (kPa):</label>
-                        <input type="number" id="edit_inicio" class="swal2-input" step="0.001" value="${dataActual.inicio || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Término (kPa):</label>
-                        <input type="number" id="edit_termino" class="swal2-input" step="0.001" value="${dataActual.termino || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Llegada (kPa):</label>
-                        <input type="number" id="edit_llegada" class="swal2-input" step="0.001" value="${dataActual.llegada || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Despacho (kPa):</label>
-                        <input type="number" id="edit_despacho" class="swal2-input" step="0.001" value="${dataActual.despacho || ''}" style="width: 90%; margin: 0;">
-                    </div>
-                </div>
-            `,
+            customClass: { popup: 'packing-edit-modal' },
+            html: html,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
@@ -2601,16 +3309,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function editarFilaObservacion(clamNum, dataActual) {
+        var obsVal = (dataActual.observacion != null && dataActual.observacion !== undefined) ? String(dataActual.observacion) : '';
+        var html = '<div class="packing-modal-grid"><div class="packing-modal-field"><label>Observación:</label><textarea id="edit_obs" class="swal2-input" rows="3" style="width:100%;margin:0;min-height:80px;box-sizing:border-box;">' + obsVal.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</textarea></div></div>';
         Swal.fire({
             title: `Editar Observación #${clamNum}`,
-            html: `
-                <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <div>
-                        <label style="display: block; text-align: left; margin-bottom: 5px;">Observación:</label>
-                        <textarea id="edit_obs" class="swal2-input" rows="3" style="width: 90%; margin: 0; height: 80px;">${dataActual.observacion || ''}</textarea>
-                    </div>
-                </div>
-            `,
+            customClass: { popup: 'packing-edit-modal' },
+            html: html,
             confirmButtonText: 'Guardar',
             confirmButtonColor: '#2f7cc0',
             showCancelButton: true,
@@ -2648,13 +3352,44 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'Cancelar'
         }).then((result) => {
             if (result.isConfirmed) {
-                datosEnsayos[tipoActual][ensayoActual][tipo].splice(num - 1, 1);
-                restaurarDatosEnsayo(tipoActual, ensayoActual);
+                var lista = datosEnsayos[tipoActual][ensayoActual][tipo];
+                var filaEliminada = lista[num - 1];
+                var eraCosecha = filaEliminada && filaEliminada.tipo === 'C';
+                var jarraCosecha = (eraCosecha && filaEliminada.jarra != null) ? String(filaEliminada.jarra).trim() : '';
+
+                lista.splice(num - 1, 1);
+
+                if (tipo === 'jarras' && eraCosecha && jarraCosecha) {
+                    for (var i = lista.length - 1; i >= 0; i--) {
+                        if (lista[i].tipo !== 'T') continue;
+                        var j = ('' + (lista[i].jarra || '')).trim();
+                        var incluyeJarra = (j === jarraCosecha) || (j.indexOf('-') >= 0 && j.split('-').map(function (x) { return (x || '').trim(); }).indexOf(jarraCosecha) >= 0);
+                        if (incluyeJarra) lista.splice(i, 1);
+                    }
+                }
+
+                try {
+                    restaurarDatosEnsayo(tipoActual, ensayoActual);
+                    if (tipo === 'jarras') {
+                        var selTipo = document.getElementById('reg_jarras_tipo');
+                        var tipoAntes = (selTipo && selTipo.value) ? (selTipo.value || '').trim() : '';
+                        actualizarCampoNJarraSegunTipo();
+                        var selJarra = document.getElementById('reg_jarras_n_jarra');
+                        if (selJarra) selJarra.value = '';
+                        if (selTipo) selTipo.value = tipoAntes || '';
+                        actualizarCampoNJarraSegunTipo();
+                        setTimeout(function () {
+                            try { actualizarCampoNJarraSegunTipo(); } catch (e2) { console.warn('actualizarCampoNJarraSegunTipo:', e2); }
+                        }, 50);
+                    }
+                } catch (e) {
+                    console.error('Error al eliminar fila jarras:', e);
+                }
                 window.formHasChanges = true;
-                
+
                 Swal.fire({
                     title: 'Eliminado',
-                    text: 'Registro eliminado correctamente',
+                    text: eraCosecha && tipo === 'jarras' ? 'Cosecha y sus Traslados asociados eliminados correctamente' : 'Registro eliminado correctamente',
                     icon: 'success',
                     timer: 1500,
                     showConfirmButton: false
@@ -2726,19 +3461,68 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputTermino = document.getElementById('reg_jarras_termino');
     const spanTiempo = document.getElementById('reg_jarras_tiempo');
 
+    function actualizarTiempoJarrasInput() {
+        const inicio = inputInicio.value;
+        const termino = inputTermino.value;
+        if (inicio && termino) {
+            spanTiempo.textContent = calcularTiempoEmpleado(inicio, termino);
+        } else {
+            spanTiempo.textContent = "0'";
+        }
+    }
     if (inputInicio && inputTermino && spanTiempo) {
         [inputInicio, inputTermino].forEach(input => {
+            input.addEventListener('input', actualizarTiempoJarrasInput);
             input.addEventListener('change', () => {
-                const inicio = inputInicio.value;
-                const termino = inputTermino.value;
-                
-                if (inicio && termino) {
-                    spanTiempo.textContent = calcularTiempoEmpleado(inicio, termino);
-                } else {
-                    spanTiempo.textContent = "0'";
+                var tipoEl = document.getElementById('reg_jarras_tipo');
+                var jarraEl = document.getElementById('reg_jarras_n_jarra');
+                if (inputInicio === input && tipoEl && jarraEl) {
+                    var tipo = (tipoEl.value || '').trim();
+                    var jarra = (jarraEl.value || '').trim();
+                    if (tipo === 'T' && jarra) {
+                        var terminoCosecha = getTerminoCosechaParaJarra(ensayoActual, jarra);
+                        var inicioVal = inputInicio.value || '';
+                        if (terminoCosecha && inicioVal && tiempoEnMinutos(inicioVal) < tiempoEnMinutos(terminoCosecha)) {
+                            Swal.fire({
+                                title: 'Hora inválida',
+                                text: 'El inicio de Traslado debe ser igual o posterior al término de Cosecha (' + terminoCosecha + ') para la misma N° Jarra.',
+                                icon: 'error',
+                                confirmButtonColor: '#2f7cc0'
+                            });
+                            inputInicio.value = terminoCosecha;
+                        }
+                    }
                 }
+                actualizarTiempoJarrasInput();
             });
         });
+        inputInicio.addEventListener('focus', function () {
+            if (!inputInicio.value && document.getElementById('reg_jarras_tipo') && (document.getElementById('reg_jarras_tipo').value || '').trim() === 'T') {
+                llenarInicioTrasladoSegunCosecha();
+            }
+        });
+    }
+
+    /** Validación Visual: Peso 1 ≥ Peso 2 ≥ Llegada ≥ Despacho. Cualquier valor posterior debe ser ≤ al anterior (también con campos vacíos en medio). */
+    function validarVisualPesosOrden(data) {
+        var nums = [
+            parseFloat(String(data.p1 || '').replace(',', '.')),
+            parseFloat(String(data.p2 || '').replace(',', '.')),
+            parseFloat(String(data.llegada || '').replace(',', '.')),
+            parseFloat(String(data.despacho || '').replace(',', '.'))
+        ];
+        var nombres = ['Peso 1', 'Peso 2', 'Llegada', 'Despacho'];
+        for (var i = 0; i < nums.length; i++) {
+            if (!isNaN(nums[i]) && nums[i] < 0) return { ok: false, msg: 'Los pesos deben ser mayores o iguales a 0.' };
+        }
+        for (var i = 0; i < nums.length; i++) {
+            for (var j = i + 1; j < nums.length; j++) {
+                if (!isNaN(nums[i]) && !isNaN(nums[j]) && nums[j] > nums[i]) {
+                    return { ok: false, msg: nombres[i] + ' ≥ ' + nombres[j] + ' (' + nombres[j] + ' debe ser menor o igual).' };
+                }
+            }
+        }
+        return { ok: true };
     }
 
     // --- Botones Añadir: Pesos, Jarras, Temperaturas, Tiempos, Humedad, Presión, Observación ---
@@ -2769,29 +3553,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 return;
             }
-            if (p1 !== '' && p2 !== '') {
-                const n1 = Number(p1), n2 = Number(p2);
-                if (Number.isNaN(n2) || n2 > n1) {
-                    Swal.fire({
-                        title: 'Peso 2 inválido',
-                        text: 'Peso 2 debe ser menor o igual que Peso 1.',
-                        icon: 'warning',
-                        confirmButtonColor: '#2f7cc0'
-                    });
-                    return;
-                }
-            }
-            if (llegada !== '' && despacho !== '') {
-                const nLleg = Number(llegada), nDesp = Number(despacho);
-                if (Number.isNaN(nDesp) || nDesp > nLleg) {
-                    Swal.fire({
-                        title: 'Despacho inválido',
-                        text: 'Despacho acopio debe ser menor o igual que Llegada acopio.',
-                        icon: 'warning',
-                        confirmButtonColor: '#2f7cc0'
-                    });
-                    return;
-                }
+            var resPesos = validarVisualPesosOrden({ p1, p2, llegada, despacho });
+            if (!resPesos.ok) {
+                Swal.fire({
+                    title: 'Orden de pesos',
+                    text: resPesos.msg,
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                return;
             }
 
             const tbody = document.getElementById('tbody-visual');
@@ -2826,14 +3596,41 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             const jarra = document.getElementById('reg_jarras_n_jarra').value.trim();
-            const tipo = document.getElementById('reg_jarras_tipo').value || '';
+            const tipo = (document.getElementById('reg_jarras_tipo').value || '').trim();
             const inicio = document.getElementById('reg_jarras_inicio').value || '';
             const termino = document.getElementById('reg_jarras_termino').value || '';
 
-            if (!esNumeroPositivoEntero(jarra)) {
+            if (tipo !== 'C' && tipo !== 'T') {
                 Swal.fire({
-                    title: 'N° Jarra inválido',
-                    text: 'El N° Jarra debe ser un número entero positivo (sin negativos ni letras).',
+                    title: 'Tipo inválido',
+                    text: 'El tipo debe ser Cosecha o Traslado. No se puede guardar como Calibrado Visual.',
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                return;
+            }
+            if (!jarra) {
+                Swal.fire({
+                    title: 'Selecciona N° Jarra',
+                    text: 'Elige una jarra en el desplegable (o viaje grupal si es Traslado).',
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                return;
+            }
+            if (!inicio || !inicio.trim()) {
+                Swal.fire({
+                    title: 'Hora de inicio requerida',
+                    text: 'Debes ingresar la hora de inicio para agregar la fila.',
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                return;
+            }
+            if (tipo === 'C' && jarra.indexOf('-') >= 0) {
+                Swal.fire({
+                    title: 'Cosecha: una jarra',
+                    text: 'En Cosecha elige una jarra individual (1, 2…), no el viaje grupal.',
                     icon: 'warning',
                     confirmButtonColor: '#2f7cc0'
                 });
@@ -2843,6 +3640,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 Swal.fire({
                     title: 'Hora inválida',
                     text: 'La hora de término debe ser mayor o igual que la hora de inicio.',
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                return;
+            }
+
+            // No permitir duplicado: mismo N° Jarra + mismo TIPO (ej. dos veces "Cosecha" con jarra 1)
+            const normJarra = (v) => (v == null || v === '') ? '' : String(v).trim();
+            const yaExiste = (datosEnsayos.visual[ensayoActual].jarras || []).some(function (j) {
+                return normJarra(j.jarra) === normJarra(jarra) && j.tipo === tipo;
+            });
+            if (yaExiste) {
+                const tipoLabel = tipo === 'C' ? 'Cosecha' : 'Traslado';
+                Swal.fire({
+                    title: 'Registro duplicado',
+                    text: 'Ya existe una fila con N° Jarra "' + (jarra || '(vacío)') + '" y tipo "' + tipoLabel + '". No se puede repetir la misma combinación.',
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                return;
+            }
+
+            // Traslado: inicio y término deben ser >= término de Cosecha (misma N° Jarra)
+            var listaConNueva = (datosEnsayos.visual[ensayoActual].jarras || []).concat([{ jarra: jarra, tipo: tipo, inicio: inicio, termino: termino }]);
+            var resOrden = validarOrdenCosechaTrasladoJarras(listaConNueva);
+            if (!resOrden.ok) {
+                Swal.fire({
+                    title: 'Hora inválida',
+                    text: resOrden.msg,
                     icon: 'warning',
                     confirmButtonColor: '#2f7cc0'
                 });
@@ -2860,14 +3686,25 @@ document.addEventListener('DOMContentLoaded', () => {
             actualizarContador('next_row_jarras', rowNum);
             window.formHasChanges = true;
 
-            document.getElementById('reg_jarras_n_jarra').value = '';
             document.getElementById('reg_jarras_tipo').value = '';
+            actualizarCampoNJarraSegunTipo();
             document.getElementById('reg_jarras_inicio').value = '';
             document.getElementById('reg_jarras_termino').value = '';
             document.getElementById('reg_jarras_tiempo').textContent = "0'";
-            document.getElementById('reg_jarras_n_jarra').focus();
+            var jarraEl = document.getElementById('reg_jarras_n_jarra');
+            if (jarraEl) jarraEl.focus();
         });
     }
+
+    var regJarrasTipo = document.getElementById('reg_jarras_tipo');
+    if (regJarrasTipo) regJarrasTipo.addEventListener('change', function () {
+        actualizarCampoNJarraSegunTipo();
+        if ((regJarrasTipo.value || '').trim() === 'T') setTimeout(function () { llenarInicioTrasladoSegunCosecha(); }, 50);
+    });
+    var wrapperJarras = document.getElementById('wrapper_jarras');
+    if (wrapperJarras) wrapperJarras.addEventListener('change', function (e) {
+        if (e.target && e.target.id === 'reg_jarras_n_jarra') actualizarTipoSegunJarra();
+    });
 
     const btnAddTemp = document.getElementById('btn-add-temperaturas');
     if (btnAddTemp) {
@@ -2973,18 +3810,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const llegada = document.getElementById('reg_tiempos_llegada_acopio').value || '';
             const despacho = document.getElementById('reg_tiempos_despacho_acopio').value || '';
 
-            const orden = [inicio, perdida, termino, llegada, despacho];
-            for (let i = 0; i < orden.length - 1; i++) {
-                if (orden[i] && orden[i + 1] && !tiempoMenorOIgual(orden[i], orden[i + 1])) {
-                    const nombres = ['Inicio cosecha', 'Pérdida peso', 'Término cosecha', 'Llegada acopio', 'Despacho acopio'];
-                    Swal.fire({
-                        title: 'Orden de tiempos inválido',
-                        text: `Cada hora debe ser mayor o igual a la anterior. Revisa "${nombres[i]}" y "${nombres[i + 1]}".`,
-                        icon: 'warning',
-                        confirmButtonColor: '#2f7cc0'
-                    });
-                    return;
-                }
+            var resTiempos = validarTiemposMuestraOrden({ inicio, perdida, termino, llegada, despacho });
+            if (!resTiempos.ok) {
+                Swal.fire({
+                    title: 'Orden de tiempos',
+                    text: resTiempos.msg,
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                return;
             }
 
             const tbody = document.getElementById('tbody-tiempos');
@@ -3206,6 +4040,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /** Valida que cada fila del Visual tenga todos los inputs llenos (como validarPackingCompletoParaGuardar). Devuelve { ok: true } o { ok: false, msg, fila, seccion, ensayo }. */
+    function validarVisualCompletoParaGuardar(datosDelTipo, ensayosAIncluir) {
+        if (!datosDelTipo || !ensayosAIncluir || ensayosAIncluir.length === 0) return { ok: true };
+        const vacio = function (v) { return v === null || v === undefined || (typeof v === 'string' && String(v).trim() === ''); };
+        const nombresSeccion = { visual: 'Pesos (Visual)', temperaturas: 'Temperatura muestra', tiempos: 'Tiempos', humedad: 'Humedad', presionambiente: 'Presión ambiente', presionfruta: 'Presión fruta', observacion: 'Observación' };
+        for (let numE of ensayosAIncluir) {
+            const ed = datosDelTipo[numE];
+            if (!ed || !ed.visual || ed.visual.length === 0) continue;
+            const n = ed.visual.length;
+            for (let i = 0; i < n; i++) {
+                const v = ed.visual[i] || {};
+                if (vacio(v.jarra) || vacio(v.p1) || vacio(v.p2) || vacio(v.llegada) || vacio(v.despacho)) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.visual + '.', fila: i + 1, seccion: nombresSeccion.visual, ensayo: numE };
+                const temp = (ed.temperaturas && ed.temperaturas[i]) || {};
+                const camposTemp = ['inicio_amb', 'inicio_pul', 'termino_amb', 'termino_pul', 'llegada_amb', 'llegada_pul', 'despacho_amb', 'despacho_pul'];
+                for (let c = 0; c < camposTemp.length; c++) { if (vacio(temp[camposTemp[c]])) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.temperaturas + '.', fila: i + 1, seccion: nombresSeccion.temperaturas, ensayo: numE }; }
+                const tiempo = (ed.tiempos && ed.tiempos[i]) || {};
+                if (vacio(tiempo.inicio) || vacio(tiempo.perdida) || vacio(tiempo.termino) || vacio(tiempo.llegada) || vacio(tiempo.despacho)) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.tiempos + '.', fila: i + 1, seccion: nombresSeccion.tiempos, ensayo: numE };
+                const hum = (ed.humedad && ed.humedad[i]) || {};
+                if (vacio(hum.inicio) || vacio(hum.termino) || vacio(hum.llegada) || vacio(hum.despacho)) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.humedad + '.', fila: i + 1, seccion: nombresSeccion.humedad, ensayo: numE };
+                const pAmb = (ed.presionambiente && ed.presionambiente[i]) || {};
+                if (vacio(pAmb.inicio) || vacio(pAmb.termino) || vacio(pAmb.llegada) || vacio(pAmb.despacho)) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.presionambiente + '.', fila: i + 1, seccion: nombresSeccion.presionambiente, ensayo: numE };
+                const pFru = (ed.presionfruta && ed.presionfruta[i]) || {};
+                if (vacio(pFru.inicio) || vacio(pFru.termino) || vacio(pFru.llegada) || vacio(pFru.despacho)) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.presionfruta + '.', fila: i + 1, seccion: nombresSeccion.presionfruta, ensayo: numE };
+                const obs = (ed.observacion && ed.observacion[i]) || {};
+                if (vacio(obs.observacion)) return { ok: false, msg: 'complete el campo de ' + nombresSeccion.observacion + '.', fila: i + 1, seccion: nombresSeccion.observacion, ensayo: numE };
+            }
+        }
+        return { ok: true };
+    }
+
     // --- Guardado final Visual: join datos, saveLocal, POST cuando hay conexión ---
     const btnGuardarGeneral = document.getElementById('btn-guardar-registro');
 
@@ -3268,6 +4132,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Si hay datos en Pesos (Visual), debe haber al menos una fila en Tiempo de llenado de jarras por ese ensayo
+            const ensayoSinJarras = ensayosAIncluir.find(function(numE) {
+                const ed = datosDelTipo[numE];
+                return ed && ed.visual && ed.visual.length > 0 && (!ed.jarras || ed.jarras.length === 0);
+            });
+            if (ensayoSinJarras) {
+                Swal.fire({
+                    title: 'Falta tiempo de llenado de jarras',
+                    text: 'El Ensayo ' + ensayoSinJarras + ' tiene datos en Pesos (Visual). Debe haber al menos una fila en "Tiempo de llenado de jarras" para ese ensayo.',
+                    icon: 'warning',
+                    confirmButtonColor: '#2f7cc0'
+                });
+                toggleSaving(false);
+                return;
+            }
+
+            // Validar que cada fila tenga todos los inputs llenos en todos los wrappers (como en Packing)
+            const validVisual = validarVisualCompletoParaGuardar(datosDelTipo, ensayosAIncluir);
+            if (!validVisual.ok) {
+                Swal.fire({
+                    title: 'Campos incompletos',
+                    html: 'Al guardar, cada fila debe tener todos los campos llenos en cada sección.<br><br><strong>Ensayo ' + validVisual.ensayo + ', Fila ' + validVisual.fila + ':</strong> ' + validVisual.msg,
+                    icon: 'error',
+                    confirmButtonColor: '#d33'
+                });
+                toggleSaving(false);
+                return;
+            }
+
             // Persistir la cabecera del ensayo actual (el que está seleccionado en el rótulo) antes de armar filas
             if (rotuloSeleccionado) guardarFormHeaderEnEnsayo(rotuloSeleccionado);
 
@@ -3285,9 +4178,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     // JOIN entre visual y jarras por n_jarra
                     const registrosCombinados = ensayo.visual.map((visual, index) => {
                         const vJarra = normJarra(visual.jarra);
-                        // Buscar jarras tipo C y T para esta jarra
+                        // Buscar jarras tipo C y T para esta jarra (Traslado "1-2" aplica a jarra 1 y 2)
+                        function jarraTrasladoAplicaA(trasladoJarra, visualJarra) {
+                            var n = (v) => (v == null || v === '') ? '' : String(v).trim();
+                            var v = n(visualJarra);
+                            var t = n(trasladoJarra);
+                            if (t === v) return true;
+                            if (t.indexOf('-') >= 0) {
+                                var ids = t.split('-').map(function (s) { return n(s); }).filter(Boolean);
+                                return ids.indexOf(v) >= 0;
+                            }
+                            return false;
+                        }
                         const jarraC = ensayo.jarras ? ensayo.jarras.find(j => normJarra(j.jarra) === vJarra && j.tipo === 'C') : null;
-                        const jarraT = ensayo.jarras ? ensayo.jarras.find(j => normJarra(j.jarra) === vJarra && j.tipo === 'T') : null;
+                        const jarraT = ensayo.jarras ? ensayo.jarras.find(j => j.tipo === 'T' && jarraTrasladoAplicaA(j.jarra, vJarra)) : null;
                         
                         const tempCorrespondiente = ensayo.temperaturas && ensayo.temperaturas[index] ? ensayo.temperaturas[index] : null;
                         const tiempoCorrespondiente = ensayo.tiempos && ensayo.tiempos[index] ? ensayo.tiempos[index] : null;
@@ -3357,13 +4261,27 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                     });
                     
-                    // Caso BACKUP: Jarras con tiempos pero sin peso (capturar C y T; no dejar datos en el aire)
+                    // Caso BACKUP: Jarras con tiempos pero sin peso (capturar C y T). Traslado "1-2" aplica a todas las jarras en el grupo.
                     if (ensayo.jarras) {
-                        const nJarraNum = (j) => parseInt(j.jarra) || 0;
+                        const nJarraNum = (j) => (j.jarra !== '' && j.jarra != null && j.jarra.toString().indexOf('-') < 0) ? (parseInt(j.jarra) || 0) : 0;
                         ensayo.jarras.forEach(jarra => {
+                            if (jarra.tipo !== 'C' && jarra.tipo !== 'T') return;
+                            const esC = jarra.tipo === 'C';
+                            const esT = jarra.tipo === 'T';
+                            var idsTraslado = esT && (jarra.jarra + '').indexOf('-') >= 0 ? idsDeJarraTraslado(jarra.jarra) : [];
+                            if (esT && idsTraslado.length > 0) {
+                                idsTraslado.forEach(function (idStr) {
+                                    var nJ = parseInt(idStr, 10) || 0;
+                                    var existente = registrosCombinados.find(function (r) { return r.n_jarra === nJ; });
+                                    if (existente && !existente.inicio_t) {
+                                        existente.inicio_t = jarra.inicio || '';
+                                        existente.termino_t = jarra.termino || '';
+                                        existente.min_t = jarra.tiempo || '';
+                                    }
+                                });
+                                return;
+                            }
                             const nJarra = nJarraNum(jarra);
-                                const esC = jarra.tipo === 'C';
-                                const esT = jarra.tipo === 'T';
                             const existente = registrosCombinados.find(r => r.n_jarra === nJarra);
                             if (!existente) {
                                 registrosCombinados.push({
@@ -3388,7 +4306,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                     observacion: null
                                 });
                             } else if (existente.n_clamshell === 0) {
-                                // Misma jarra ya tiene fila (p.ej. por C); completar con T o C que falte
                                 if (esC && !existente.inicio_c) {
                                     existente.inicio_c = jarra.inicio || '';
                                     existente.termino_c = jarra.termino || '';
@@ -3518,14 +4435,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         doc.setDrawColor(0, 0, 0);
                         doc.setLineWidth(0.2);
-                        const blockH = 43;
-                        doc.rect(margin, y, contentWidth, blockH);
-                        y += 3;
+                        const paddingDatos = 6;
+                        const startYDatos = y;
                         const bullet = '\u2022';
                         doc.setFontSize(8);
                         doc.setFont(undefined, 'bold');
+                        const rowHDatos = 5;
+                        const gapDespuesTitulo = 6;
+                        const tituloDatosH = 2;
+                        const blockH = paddingDatos + tituloDatosH + gapDespuesTitulo + 6 * rowHDatos;
+                        doc.rect(margin, startYDatos, contentWidth, blockH);
+                        y += paddingDatos;
                         doc.text('Datos del registro', margin + contentWidth / 2, y, { align: 'center' });
-                        y += 5;
+                        y += gapDespuesTitulo;
                         doc.setFont(undefined, 'normal');
                         const camposPDF = [
                             { label: 'Tipo de Medición', value: 'Calibrado Visual' },
@@ -3542,9 +4464,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             { label: 'Observación', value: String(r0[11] || '').substring(0, 45) }
                         ];
                         const colW = contentWidth / 2;
-                        const leftX = margin + 3;
-                        const rightX = margin + colW + 3;
-                        const rowH = 5.2;
+                        const leftX = margin + paddingDatos;
+                        const rightX = margin + colW + paddingDatos;
+                        const rowH = rowHDatos;
                         for (let i = 0; i < camposPDF.length; i += 2) {
                             const c0 = camposPDF[i];
                             const c1 = camposPDF[i + 1];
@@ -3560,22 +4482,22 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             y += rowH;
                         }
-                        y += 5;
+                        y = startYDatos + blockH + 1;
 
                         doc.setDrawColor(0, 0, 0);
                         doc.setLineWidth(0.4);
                         const lineH = 6;
-                        const yMax = 268;
+                        const yMax = 278;
 
                         const drawTable = (titulo, headers, indices, rows, maxLen) => {
                             const dataRows = (rows || allRows).slice(0, 15);
                             const totalTableH = (1 + dataRows.length) * lineH;
-                            const sectionH = 5 + 4 + totalTableH + 4;
+                            const sectionH = 4 + 4 + totalTableH + 3;
                             if (y + sectionH > yMax) {
                                 doc.addPage();
                                 y = 10;
                             }
-                            y += 5;
+                            y += 4;
                             doc.setFontSize(fontSize);
                             doc.setFont(undefined, 'bold');
                             doc.text(titulo, margin, y, { align: 'left' });
@@ -3604,7 +4526,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 y += lineH;
                             });
                             doc.setFontSize(fontSize);
-                            y += 4;
+                            y += 3;
                         };
 
                         drawTable('1. Tiempo de llenado de jarras (hora)', ['ITEM', 'N° JARRA', 'INICIO COSECHA', 'TÉRMINO COSECHA', 'TIEMPO (min)', 'INICIO TRASLADO', 'TÉRMINO TRASLADO', 'TIEMPO TRASL. (min)'], [14, 15, 20, 21, 22, 23, 24, 25], allRows);

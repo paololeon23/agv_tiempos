@@ -1,17 +1,12 @@
 /**
  * Google Apps Script - MTTP Arándano
  * Recibe datos del formulario y los escribe en la hoja activa.
- * 52 columnas (FUNDO, OBSERVACION_FORMATO; sin TEMP_AMB_*).
+ * Hoja 1: 46 cols registro + 38 packing = 84 cols. INICIO_C..MIN_T están en Hoja 2.
  *
- * ANTI-DUPLICADOS (evita réplicas por fallas de internet o reintentos):
- * 1) Idempotencia por UID: si el mismo envío (uid) ya se procesó, no se inserta de nuevo.
- * 2) Clave de fila: cada fila existente tiene una clave normalizada; si la fila ya está, no se inserta.
- * Así, aunque el mismo registro se envíe varias veces, solo se guarda una vez.
+ * ANTI-DUPLICADOS: UID + clave de fila normalizada.
  *
- * --- LÓGICA PACKING (columnas 53+) ---
- * GET con fecha + ensayo_numero → devuelve data.fila = número de fila en la hoja (ej. 7).
- * POST con mode:'packing' + fecha + ensayo_numero + packingRows → escribe en ESA fila desde col 53 (tras 52 cols de registro).
- * Orden: col 53 = HORA_RECEPCION, 54 = N_VIAJE, 55+ = packing fila 1, fila 2, ... (41 valores por fila).
+ * --- PACKING (cols 47–84) ---
+ * GET → data.fila y despachoPorFila. POST packing → escribe desde col 47.
  */
 function doPost(e) {
   if (!e || !e.postData || !e.postData.contents) {
@@ -30,7 +25,7 @@ function doPost(e) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
     const data = JSON.parse(e.postData.contents);
 
-    // POST PACKING: misma fila que fecha+ensayo, desde columna 53 (registro = 52 cols)
+    // POST PACKING: misma fila que fecha+ensayo, desde columna 47 (registro = 46 cols en Hoja 1)
     if (data.mode === 'packing') {
       var packingResult = doPostPacking(sheet, data);
       lock.releaseLock();
@@ -68,10 +63,11 @@ function doPost(e) {
     }
 
     if (sheet.getLastRow() === 0) {
+      // Hoja 1: 46 columnas. INICIO_C, TERMINO_C, MIN_C, INICIO_T, TERMINO_T, MIN_T van en Hoja 2.
       const headers = [
         "FECHA", "RESPONSABLE", "GUIA_REMISION", "VARIEDAD", "PLACA_VEHICULO", "HORA_INICIO_GENERAL", "DIAS_PRECOSECHA",
         "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_LIBRE", "FUNDO", "OBSERVACION_FORMATO", "ENSAYO_NUMERO", "ENSAYO_NOMBRE", "N_CLAMSHELL", "N_JARRA",
-        "PESO_1", "PESO_2", "LLEGADA_ACOPIO", "DESPACHO_ACOPIO", "INICIO_C", "TERMINO_C", "MIN_C", "INICIO_T", "TERMINO_T", "MIN_T",
+        "PESO_1", "PESO_2", "LLEGADA_ACOPIO", "DESPACHO_ACOPIO",
         "TEMP_MUE_INICIO_AMB", "TEMP_MUE_INICIO_PUL", "TEMP_MUE_TERMINO_AMB", "TEMP_MUE_TERMINO_PUL",
         "TEMP_MUE_LLEGADA_AMB", "TEMP_MUE_LLEGADA_PUL", "TEMP_MUE_DESPACHO_AMB", "TEMP_MUE_DESPACHO_PUL",
         "TIEMPO_INICIO_COSECHA", "TIEMPO_PERDIDA_PESO", "TIEMPO_TERMINO_COSECHA", "TIEMPO_LLEGADA_ACOPIO", "TIEMPO_DESPACHO_ACOPIO",
@@ -83,7 +79,7 @@ function doPost(e) {
       sheet.appendRow(headers);
     }
 
-    const NUM_COLS = 52;
+    const NUM_COLS = 46; // Hoja 1: registro. Las 6 de tiempos (INICIO_C..MIN_T) están en Hoja 2.
 
     // Normalizar valor para la clave (hoja devuelve Date/number, el POST envía string)
     function normalizarParaClave(v) {
@@ -92,7 +88,6 @@ function doPost(e) {
       var s = String(v).trim();
       return s;
     }
-
     function buildKey(row) {
       return row.slice(0, NUM_COLS).map(normalizarParaClave).join("||");
     }
@@ -108,19 +103,43 @@ function doPost(e) {
       });
     }
 
-    // Escribir todo como string para que Sheets no interprete números (ej. 1) como hora (0:00)
     function celdaAString(cell) {
       if (cell === null || cell === undefined) return "";
       return String(cell);
     }
+    // Si el front envía 52 columnas, quitar índices 20-25 (INICIO_C..MIN_T) para escribir 46 en Hoja 1; esos 6 van a Hoja 2.
+    function toRow46(row) {
+      while (row.length < 52) row.push("");
+      var a = row.slice(0, 20).concat(row.slice(26, 52));
+      return a.slice(0, NUM_COLS).map(celdaAString);
+    }
+    function rowHoja2(fila, rowOriginal) {
+      // Réplica en Hoja 2: FECHA, ENSAYO_NUMERO, N_JARRA; luego INICIO_C, TERMINO_C, MIN_C, INICIO_T, TERMINO_T, MIN_T (9 cols)
+      var c = celdaAString;
+      var out = [c(fila[0]), c(fila[12]), c(fila[15]), '', '', '', '', '', ''];
+      if (rowOriginal && rowOriginal.length >= 26) {
+        out[3] = c(rowOriginal[20]); out[4] = c(rowOriginal[21]); out[5] = c(rowOriginal[22]);
+        out[6] = c(rowOriginal[23]); out[7] = c(rowOriginal[24]); out[8] = c(rowOriginal[25]);
+      }
+      return out;
+    }
+    // No agregar en Hoja 1 filas con N_CLAMSHELL=0 o PESO_1=0 o PESO_2=0. En Hoja 2 sí se agregan todas (incl. N_CLAMSHELL=0).
+    function esCero(v) {
+      if (v === null || v === undefined) return true;
+      var s = String(v).trim();
+      if (s === '') return true;
+      var n = parseFloat(s.replace(',', '.'));
+      return isNaN(n) || n === 0;
+    }
     var nuevasFilas = [];
+    var filasHoja2 = [];
     rows.forEach(function(row) {
-      while (row.length < NUM_COLS) row.push("");
-      var fila = row.slice(0, NUM_COLS).map(celdaAString);
+      var fila = row.length >= 52 ? toRow46(row) : (function() { while (row.length < NUM_COLS) row.push(""); return row.slice(0, NUM_COLS).map(celdaAString); })();
       var key = buildKey(fila);
       if (existingKeys[key]) return;
-      nuevasFilas.push(fila);
       existingKeys[key] = true;
+      filasHoja2.push(rowHoja2(fila, row.length >= 52 ? row : null));
+      if (!esCero(fila[14]) && !esCero(fila[16]) && !esCero(fila[17])) nuevasFilas.push(fila);
     });
 
     // Re-leer la hoja justo antes de escribir (por si otro request escribió mientras esperaba el lock)
@@ -146,7 +165,18 @@ function doPost(e) {
       var startRow = sheet.getLastRow() + 1;
       var numRows = nuevasFilas.length;
       sheet.getRange(startRow, 1, numRows, NUM_COLS).setValues(nuevasFilas);
-      console.log("[doPost] Insertadas " + numRows + " filas desde fila " + startRow);
+      console.log("[doPost] Insertadas " + numRows + " filas desde fila " + startRow + " (Hoja 1)");
+    }
+    if (filasHoja2.length > 0) {
+      var sheet2 = SpreadsheetApp.getActiveSpreadsheet().getSheets()[1];
+      if (sheet2) {
+        if (sheet2.getLastRow() === 0) {
+          sheet2.appendRow(["FECHA", "ENSAYO_NUMERO", "N_JARRA", "INICIO_C", "TERMINO_C", "MIN_C", "INICIO_T", "TERMINO_T", "MIN_T"]);
+        }
+        var startRow2 = sheet2.getLastRow() + 1;
+        sheet2.getRange(startRow2, 1, filasHoja2.length, 9).setValues(filasHoja2);
+        console.log("[doPost] Insertadas " + filasHoja2.length + " filas en Hoja 2 (réplica FECHA,ENSAYO_NUMERO,N_JARRA; incl. N_CLAMSHELL=0)");
+      }
     }
 
     if (nuevasFilas.length === 0 && rows.length > 0) {
@@ -214,8 +244,17 @@ function formatFechaPacking(val) {
 }
 
 /**
- * Nombres de columnas packing (en base a los id del formulario). 41 nombres por fila lógica.
- * Orden: p1(5), p2(5), p3(10), p4-humedad(5), p5-presion_amb(5), p6-presion_fruta(5), p7-deficit(5), p8(1).
+ * Orden oficial de columnas packing (40 columnas por fila):
+ * 1-4:   FECHA_INSPECCION, RESPONSABLE, HORA_RECEPCION, N_VIAJE
+ * 5-9:   RECEPCION, INGRESO_GASIFICADO, SALIDA_GASIFICADO, INGRESO_PREFRIO, SALIDA_PREFRIO
+ * 10-14: PESO_RECEPCION, PESO_INGRESO_GASIFICADO, PESO_SALIDA_GASIFICADO, PESO_INGRESO_PREFRIO, PESO_SALIDA_PREFRIO
+ * 15-24: T_AMB_RECEP, T_PULP_RECEP, T_AMB_ING, T_PULP_ING, T_AMB_SAL, T_PULP_SAL, T_AMB_PRE_IN, T_PULP_PRE_IN, T_AMB_PRE_OUT, T_PULP_PRE_OUT
+ * 25-29: HUMEDAD_RECEPCION, HUMEDAD_INGRESO_GASIFICADO, HUMEDAD_SALIDA_GASIFICADO, HUMEDAD_INGRESO_PREFRIO, HUMEDAD_SALIDA_PREFRIO
+ * 30-34: PRESION_AMB_RECEPCION, PRESION_AMB_INGRESO_GASIFICADO, PRESION_AMB_SALIDA_GASIFICADO, PRESION_AMB_INGRESO_PREFRIO, PRESION_AMB_SALIDA_PREFRIO
+ * 35-39: PRESION_FRUTA_RECEPCION, PRESION_FRUTA_INGRESO_GASIFICADO, PRESION_FRUTA_SALIDA_GASIFICADO, PRESION_FRUTA_INGRESO_PREFRIO, PRESION_FRUTA_SALIDA_PREFRIO
+ * 40:    OBSERVACION
+ *
+ * getPackingHeaderNamesPerRow devuelve las columnas 5-40 (36 nombres); las 4 primeras se agregan en doPostPacking.
  */
 function getPackingHeaderNamesPerRow() {
   return [
@@ -225,12 +264,11 @@ function getPackingHeaderNamesPerRow() {
     'HUMEDAD_RECEPCION', 'HUMEDAD_INGRESO_GASIFICADO', 'HUMEDAD_SALIDA_GASIFICADO', 'HUMEDAD_INGRESO_PREFRIO', 'HUMEDAD_SALIDA_PREFRIO',
     'PRESION_AMB_RECEPCION', 'PRESION_AMB_INGRESO_GASIFICADO', 'PRESION_AMB_SALIDA_GASIFICADO', 'PRESION_AMB_INGRESO_PREFRIO', 'PRESION_AMB_SALIDA_PREFRIO',
     'PRESION_FRUTA_RECEPCION', 'PRESION_FRUTA_INGRESO_GASIFICADO', 'PRESION_FRUTA_SALIDA_GASIFICADO', 'PRESION_FRUTA_INGRESO_PREFRIO', 'PRESION_FRUTA_SALIDA_PREFRIO',
-    'DEFICIT_RECEPCION', 'DEFICIT_INGRESO_GASIFICADO', 'DEFICIT_SALIDA_GASIFICADO', 'DEFICIT_INGRESO_PREFRIO', 'DEFICIT_SALIDA_PREFRIO',
     'OBSERVACION'
   ];
 }
 
-/** Devuelve el array de encabezados para columnas 53+: HORA_RECEPCION, N_VIAJE, luego por cada fila los 41 nombres con sufijo _1, _2, ... */
+/** Encabezados para packing: desde col 47 en Hoja 1. HORA_RECEPCION, N_VIAJE + 36 nombres por fila. */
 function getPackingHeaderNames(numFilas) {
   var out = ['HORA_RECEPCION', 'N_VIAJE'];
   var base = getPackingHeaderNamesPerRow();
@@ -242,14 +280,15 @@ function getPackingHeaderNames(numFilas) {
 }
 
 /**
- * POST Packing: recibe mode:'packing', fecha, ensayo_numero, hora_recepcion, n_viaje, packingRows.
- * Localiza TODAS las filas de la hoja para esa fecha+ensayo y escribe UNA fila de packing por cada fila de hoja (col 53+).
- * packingRows[0] → primera fila del ensayo, packingRows[1] → segunda, etc. (cada una: 41 valores + HORA_RECEPCION + N_VIAJE = 43 cols).
+ * POST Packing: recibe mode:'packing', fecha, ensayo_numero, fecha_inspeccion, responsable, hora_recepcion, n_viaje, packingRows.
+ * Localiza filas para esa fecha+ensayo y escribe packing desde col 47 (Hoja 1). 4 cols fijas + 36 por fila = 40 cols.
  */
 function doPostPacking(sheet, data) {
   try {
     var fecha = (data.fecha != null && data.fecha !== '') ? String(data.fecha).trim() : '';
     var ensayoNumero = (data.ensayo_numero != null && data.ensayo_numero !== '') ? String(data.ensayo_numero).trim() : '';
+    var fechaInspeccion = (data.fecha_inspeccion != null && data.fecha_inspeccion !== '') ? String(data.fecha_inspeccion).trim() : '';
+    var responsable = (data.responsable != null && data.responsable !== '') ? String(data.responsable).trim() : '';
     var horaRecepcion = (data.hora_recepcion != null && data.hora_recepcion !== '') ? String(data.hora_recepcion).trim() : '';
     var nViaje = (data.n_viaje != null && data.n_viaje !== '') ? String(data.n_viaje).trim() : '';
     var packingRows = data.packingRows || [];
@@ -279,31 +318,31 @@ function doPostPacking(sheet, data) {
     }
 
     var primeraFila = rowIndices[0];
-    var celdaPacking = sheet.getRange(primeraFila, 53).getValue();
+    var celdaPacking = sheet.getRange(primeraFila, 47).getValue();
     if (celdaPacking != null && String(celdaPacking).trim() !== '') {
       return { ok: false, error: 'Ya existe información de packing para esta fecha y ensayo. No se puede sobrescribir.' };
     }
 
-    var startCol = 53;
-    var COLS_POR_FILA = 2 + 41; // HORA_RECEPCION, N_VIAJE + 41 valores por fila lógica
-    var baseHeaders = ['HORA_RECEPCION', 'N_VIAJE'].concat(getPackingHeaderNamesPerRow());
+    var startCol = 47; // Hoja 1: packing después de 46 cols de registro
+    var COLS_POR_FILA = 4 + 36; // FECHA_INSPECCION, RESPONSABLE, HORA_RECEPCION, N_VIAJE + 36 valores por fila
+    var baseHeaders = ['FECHA_INSPECCION', 'RESPONSABLE', 'HORA_RECEPCION', 'N_VIAJE'].concat(getPackingHeaderNamesPerRow());
 
     // Escribir cada packing row en la fila de hoja correspondiente (una fila de hoja por cada packing row)
     for (var i = 0; i < packingRows.length && i < rowIndices.length; i++) {
       var row = packingRows[i];
       var filaHoja = rowIndices[i];
-      var valores = [horaRecepcion, nViaje];
+      var valores = [fechaInspeccion, responsable, horaRecepcion, nViaje];
       if (Array.isArray(row)) {
-        for (var j = 0; j < 41; j++) {
+        for (var j = 0; j < 36; j++) {
           valores.push((j < row.length && row[j] != null && row[j] !== '') ? row[j] : '');
         }
       } else {
-        for (var j = 0; j < 41; j++) valores.push('');
+        for (var j = 0; j < 36; j++) valores.push('');
       }
       sheet.getRange(filaHoja, startCol, 1, COLS_POR_FILA).setValues([valores]);
     }
 
-    // Encabezados en fila 1 (una sola vez; 43 columnas)
+    // Encabezados en fila 1 (una sola vez; 40 columnas)
     sheet.getRange(1, startCol, 1, baseHeaders.length).setValues([baseHeaders]);
 
     return {
@@ -350,7 +389,8 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    var data = sheet.getRange(2, 1, lastRow, 14).getValues();
+    // Incluir col 20 (DESPACHO_ACOPIO, índice 19) para devolver despachoPorFila al cargar packing por GET
+    var data = sheet.getRange(2, 1, lastRow, 20).getValues();
 
     /**
      * SIEMPRE devuelve yyyy-MM-dd (nunca "Tue Feb 17 2026 GMT-0500..."). Así Netlify recibe fechas cortas.
@@ -423,9 +463,9 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    // 2) Listar ensayos para una fecha (solo fecha) — devuelve números y si tienen packing (col 53)
+    // 2) Listar ensayos para una fecha — devuelve números y si tienen packing (col 47)
     if (fecha && !ensayoNumero) {
-      var packingCol = (lastRow >= 2) ? sheet.getRange(2, 53, lastRow, 53).getValues() : [];
+      var packingCol = (lastRow >= 2) ? sheet.getRange(2, 47, lastRow, 47).getValues() : [];
       var ensayosInfo = {};
       for (var j = 0; j < data.length; j++) {
         var rowFechaStr = formatFecha(data[j][0]);
@@ -484,6 +524,7 @@ function doGet(e) {
     var row = null;
     var filaEnSheet = null;
     var numFilas = 0;
+    var despachoPorFila = [];
     for (var k = 0; k < data.length; k++) {
       var r = data[k];
       var rowFechaStr = formatFecha(r[0]);
@@ -498,6 +539,9 @@ function doGet(e) {
           filaEnSheet = 2 + k;
         }
         numFilas++;
+        var desp = r[19];
+        var numDesp = (desp !== null && desp !== undefined && String(desp).trim() !== '') ? parseFloat(String(desp).replace(',', '.')) : NaN;
+        despachoPorFila.push(!isNaN(numDesp) ? numDesp : null);
       }
     }
 
@@ -508,7 +552,7 @@ function doGet(e) {
 
     var tienePacking = false;
     try {
-      var packingVal = sheet.getRange(filaEnSheet, 53).getValue();
+      var packingVal = sheet.getRange(filaEnSheet, 47).getValue();
       tienePacking = (packingVal != null && String(packingVal).trim() !== '');
     } catch (_) {}
 
@@ -517,6 +561,7 @@ function doGet(e) {
       fila: filaEnSheet,
       numFilas: numFilas,
       tienePacking: tienePacking,
+      despachoPorFila: despachoPorFila,
       ENSAYO_NUMERO: row[12],
       TRAZ_ETAPA: row[7],
       TRAZ_CAMPO: row[8],
