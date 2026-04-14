@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
     <title>Registro de Cosecha - Agrovision</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2f7cc0">
@@ -116,7 +117,7 @@
                     </div>
                     <div class="col">
                         <label><i data-lucide="user"></i> Responsable</label>
-                        <input type="text" id="reg_responsable" name="reg_responsable" placeholder="Antony Siesquén" required>
+                        <input type="text" id="reg_responsable" name="reg_responsable" value="Antony Siesquén" placeholder="Antony Siesquén" required>
                     </div>
                 </div>
 
@@ -124,30 +125,12 @@
                     <div class="col">
                         <label><i data-lucide="map-pin"></i> Trazabilidad</label>
                         <div class="input-group-triple">
-                            <select id="reg_traz_etapa" name="reg_traz_etapa" required>
-                                <option value="" disabled selected>Etapa</option>
-                                <option value="1">E1</option>
-                                <option value="2">E2</option>
-                                <option value="3">E3</option>
-                                <option value="4">E4</option>
-                                <option value="5">E5</option>
-                                <option value="6">E6</option>
-                                <option value="7">E7</option>
-                                <option value="8">E8</option>
-                                <option value="9">E9</option>
+                            <select id="reg_traz_etapa" name="reg_traz_etapa" required disabled title="Primero seleccione Fundo">
+                                <option value="" selected disabled>Etapa</option>
                             </select>
 
-                            <select id="reg_traz_campo" name="reg_traz_campo" required>
-                                <option value="" disabled selected>Campo</option>
-                                <option value="1">C1</option>
-                                <option value="2">C2</option>
-                                <option value="3">C3</option>
-                                <option value="4">C4</option>
-                                <option value="5">C5</option>
-                                <option value="6">C6</option>
-                                <option value="7">C7</option>
-                                <option value="8">C8</option>
-                                <option value="9">C9</option>
+                            <select id="reg_traz_campo" name="reg_traz_campo" required disabled title="Primero seleccione Fundo y Etapa">
+                                <option value="" selected disabled>Campo</option>
                             </select>
 
                             <input type="text" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"  id="reg_traz_libre" name="reg_traz_libre" placeholder="T4A" maxlength="3" style="text-transform: uppercase;">
@@ -189,7 +172,7 @@
                 <div class="row">
                     <div class="col">
                         <label><i data-lucide="map-pin"></i> Fundo</label>
-                        <select class="form-select" id="reg_fundo" name="reg_fundo">
+                        <select class="form-select" id="reg_fundo" name="reg_fundo" required>
                             <option value="" selected disabled>--- Seleccione Fundo ---</option>
                             <option value="c5">C5</option>
                             <option value="c6">C6</option>

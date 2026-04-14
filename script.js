@@ -170,6 +170,117 @@ function renderPdfEnModal(blobUrl, popup) {
         });
 }
 
+/** Responsable predeterminado en la cabecera de Formato campo. */
+var RESPONSABLE_CAMPO_PREDETERMINADO = 'Antony Siesquén';
+
+/**
+ * Trazabilidad (Formato campo): por fundo, etapas permitidas y campos por etapa (números separados del negocio).
+ * Claves de etapa como string para coincidir con option value.
+ */
+var FUNDO_TRAZABILIDAD_ETAPA_CAMPO = {
+    c5: { '1': [1, 3, 4, 5, 7], '2': [1, 2, 3, 4, 5, 6], '3': [1, 2, 3, 5, 6] },
+    c6: { '4': [1, 2, 3, 4, 5, 6, 7, 8, 9], '5': [1, 2, 3, 4, 5] },
+    a9: { '6': [1, 2, 3, 4, 5, 6], '7': [1, 2, 3, 4, 5, 6, 7], '8': [1, 2, 3, 4, 5, 6] },
+    ln: { '1': [3, 4, 5, 6], '2': [3, 4, 5, 6] }
+};
+
+function normalizarValorFundoSelect(v) {
+    if (v == null || v === '') return '';
+    var s = String(v).trim().toLowerCase();
+    if (s === 'c5' || s === 'c6' || s === 'a9' || s === 'ln') return s;
+    return '';
+}
+
+function regRefrescarCampoDesdeEtapaActual() {
+    var fundoEl = document.getElementById('reg_fundo');
+    var etapaEl = document.getElementById('reg_traz_etapa');
+    var campoEl = document.getElementById('reg_traz_campo');
+    if (!fundoEl || !etapaEl || !campoEl) return;
+    var fk = normalizarValorFundoSelect(fundoEl.value);
+    var map = FUNDO_TRAZABILIDAD_ETAPA_CAMPO[fk];
+    var es = String(etapaEl.value || '').trim();
+    campoEl.innerHTML = '';
+    var o0 = document.createElement('option');
+    o0.value = '';
+    o0.textContent = 'Campo';
+    o0.disabled = true;
+    o0.selected = true;
+    campoEl.appendChild(o0);
+    if (!map || !es || map[es] == null) {
+        campoEl.disabled = true;
+        campoEl.value = '';
+        return;
+    }
+    campoEl.disabled = false;
+    map[es].forEach(function (n) {
+        var op = document.createElement('option');
+        op.value = String(n);
+        op.textContent = 'C' + n;
+        campoEl.appendChild(op);
+    });
+}
+
+/**
+ * Repuebla Etapa/Campo según #reg_fundo. Si opts trae valores guardados y siguen siendo válidos, los reaplica.
+ */
+function sincronizarTrazabilidadRegCampo(opts) {
+    opts = opts || {};
+    var trEt = opts.trazEtapa != null ? String(opts.trazEtapa).trim() : '';
+    var trCa = opts.trazCampo != null ? String(opts.trazCampo).trim() : '';
+    var fundoEl = document.getElementById('reg_fundo');
+    var etapaEl = document.getElementById('reg_traz_etapa');
+    var campoEl = document.getElementById('reg_traz_campo');
+    if (!fundoEl || !etapaEl || !campoEl) return;
+    var fk = normalizarValorFundoSelect(fundoEl.value);
+    var map = FUNDO_TRAZABILIDAD_ETAPA_CAMPO[fk];
+
+    etapaEl.innerHTML = '';
+    var oe = document.createElement('option');
+    oe.value = '';
+    oe.textContent = 'Etapa';
+    oe.disabled = true;
+    oe.selected = true;
+    etapaEl.appendChild(oe);
+
+    campoEl.innerHTML = '';
+    var ocPh = document.createElement('option');
+    ocPh.value = '';
+    ocPh.textContent = 'Campo';
+    ocPh.disabled = true;
+    ocPh.selected = true;
+    campoEl.appendChild(ocPh);
+
+    if (!fk || !map) {
+        etapaEl.disabled = true;
+        campoEl.disabled = true;
+        etapaEl.value = '';
+        campoEl.value = '';
+        return;
+    }
+
+    etapaEl.disabled = false;
+    var etapas = Object.keys(map).map(function (k) { return parseInt(k, 10); }).sort(function (a, b) { return a - b; });
+    etapas.forEach(function (n) {
+        var op = document.createElement('option');
+        op.value = String(n);
+        op.textContent = 'E' + n;
+        etapaEl.appendChild(op);
+    });
+
+    if (trEt && map[trEt] != null) {
+        etapaEl.value = trEt;
+        oe.selected = false;
+        regRefrescarCampoDesdeEtapaActual();
+        var nc = parseInt(trCa, 10);
+        if (trCa !== '' && !isNaN(nc) && map[trEt].indexOf(nc) !== -1) {
+            campoEl.value = String(nc);
+        }
+    } else {
+        etapaEl.value = '';
+        campoEl.disabled = true;
+    }
+}
+
 /** Fecha local YYYY-MM-DD (para inputs type=date). */
 function fechaLocalHoy() {
     var d = new Date();
@@ -179,12 +290,18 @@ function fechaLocalHoy() {
     return y + '-' + m + '-' + day;
 }
 
-/** WebKit móvil a veces no pinta el valor si solo se asigna .value; refuerzo con attribute + eventos. */
-function setNativeDateValue(el, isoDate) {
+/**
+ * WebKit móvil a veces no pinta el valor si solo se asigna .value; refuerzo con attribute, defaultValue y eventos.
+ * `defaultValue` ayuda a iOS/Safari (sobre todo sin red o tras SW) a mostrar la fecha en el control nativo.
+ * @param {{ silent?: boolean }} [opts] — si silent, no dispara input/change (p. ej. espejo RC5 ↔ packing).
+ */
+function setNativeDateValue(el, isoDate, opts) {
     if (!el || !isoDate) return;
     var s = String(isoDate).trim();
     el.setAttribute('value', s);
+    try { el.defaultValue = s; } catch (e) {}
     el.value = s;
+    if (opts && opts.silent) return;
     try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
     try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
 }
@@ -193,6 +310,7 @@ function setNativeTimeValue(el, hhmm) {
     if (!el || hhmm == null) return;
     var s = String(hhmm).trim();
     el.setAttribute('value', s);
+    try { el.defaultValue = s; } catch (e) {}
     el.value = s;
     try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
     try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
@@ -209,8 +327,12 @@ function aplicarValoresFechaHoraPorDefecto() {
     if (vhr && !String(vhr.value || '').trim()) setNativeTimeValue(vhr, '07:15');
     var viewFecha = document.getElementById('view_fecha');
     if (viewFecha && !String(viewFecha.value || '').trim()) setNativeDateValue(viewFecha, hoy);
+    var viewFechaRc5 = document.getElementById('view_fecha_rc5');
+    if (viewFechaRc5 && !String(viewFechaRc5.value || '').trim()) setNativeDateValue(viewFechaRc5, hoy);
     var regHoraIni = document.getElementById('reg_hora_inicio');
     if (regHoraIni && !String(regHoraIni.value || '').trim()) setNativeTimeValue(regHoraIni, '07:15');
+    var regResp = document.getElementById('reg_responsable');
+    if (regResp && !String(regResp.value || '').trim()) regResp.value = RESPONSABLE_CAMPO_PREDETERMINADO;
 }
 
 function initApp() {
@@ -235,9 +357,8 @@ function initApp() {
         if (!currentFechaPacking || !currentEnsayoPacking) return;
         var fechaEl = document.getElementById('view_fecha');
         var ensayoEl = document.getElementById('view_ensayo_numero');
-        if (fechaEl) {
-            fechaEl.setAttribute('value', currentFechaPacking);
-            fechaEl.value = currentFechaPacking;
+        if (fechaEl && currentFechaPacking) {
+            setNativeDateValue(fechaEl, currentFechaPacking, { silent: true });
         }
         if (ensayoEl) {
             try { ensayoEl.value = currentEnsayoPacking; } catch (e) {}
@@ -359,9 +480,12 @@ function initApp() {
     function syncFechaEspejoSoloFechaDesdePrimario() {
         var vf = document.getElementById('view_fecha_rc5');
         var inp = document.getElementById('view_fecha');
-        if (vf && inp) {
-            vf.value = inp.value;
-            try { vf.setAttribute('value', inp.value || ''); } catch (e) {}
+        if (!vf || !inp) return;
+        var raw = String(inp.value || '').trim();
+        if (raw) setNativeDateValue(vf, raw, { silent: true });
+        else {
+            vf.value = '';
+            try { vf.removeAttribute('value'); vf.defaultValue = ''; } catch (e) {}
         }
     }
 
@@ -379,8 +503,12 @@ function initApp() {
         var se = document.getElementById('view_ensayo_numero_rc5');
         var sel = document.getElementById('view_ensayo_numero');
         if (vf && inp) {
-            inp.value = vf.value;
-            try { inp.setAttribute('value', vf.value || ''); } catch (e) {}
+            var rawRc = String(vf.value || '').trim();
+            if (rawRc) setNativeDateValue(inp, rawRc, { silent: true });
+            else {
+                inp.value = '';
+                try { inp.removeAttribute('value'); inp.defaultValue = ''; } catch (e) {}
+            }
         }
         if (se && sel) {
             copiarOpcionesSelect_(se, sel);
@@ -1454,34 +1582,32 @@ function initApp() {
         if (h) {
             if (h.fecha) setNativeDateValue(document.getElementById('reg_fecha'), h.fecha);
             else setNativeDateValue(document.getElementById('reg_fecha'), fechaLocalHoy());
-            set('reg_responsable', h.responsable);
+            set('reg_responsable', (h.responsable != null && String(h.responsable).trim() !== '') ? String(h.responsable).trim() : RESPONSABLE_CAMPO_PREDETERMINADO);
             set('reg_guia_remision', h.guia_remision);
             set('reg_variedad', h.variedad);
             set('reg_placa', h.placa);
             var hi = document.getElementById('reg_hora_inicio');
             if (hi) setNativeTimeValue(hi, h.hora_inicio || '07:15');
             set('reg_dias_precosecha', h.dias_precosecha);
-            set('reg_traz_etapa', h.traz_etapa);
-            set('reg_traz_campo', h.traz_campo);
             set('reg_traz_libre', h.traz_libre);
-            set('reg_fundo', h.fundo);
+            set('reg_fundo', normalizarValorFundoSelect(h.fundo));
+            sincronizarTrazabilidadRegCampo({ trazEtapa: h.traz_etapa, trazCampo: h.traz_campo });
             set('reg_observacion_formato', h.observacion);
         } else {
             /* Ensayo sin cabecera guardada: no vaciar fecha; mantener la del campo o hoy por defecto */
             var rf0 = document.getElementById('reg_fecha');
             var fechaMantener = rf0 && String(rf0.value || '').trim();
             setNativeDateValue(rf0, fechaMantener || fechaLocalHoy());
-            set('reg_responsable', '');
+            set('reg_responsable', RESPONSABLE_CAMPO_PREDETERMINADO);
             set('reg_guia_remision', '');
             set('reg_variedad', '');
             set('reg_placa', '');
             var hi2 = document.getElementById('reg_hora_inicio');
             if (hi2) setNativeTimeValue(hi2, '07:15');
             set('reg_dias_precosecha', '');
-            set('reg_traz_etapa', '');
-            set('reg_traz_campo', '');
             set('reg_traz_libre', '');
             set('reg_fundo', '');
+            sincronizarTrazabilidadRegCampo({});
             set('reg_observacion_formato', '');
         }
     }
@@ -1497,6 +1623,24 @@ function initApp() {
             }
         });
     }
+
+    (function bindTrazabilidadFundoEtapaCampo() {
+        var regFundo = document.getElementById('reg_fundo');
+        var regEtapa = document.getElementById('reg_traz_etapa');
+        if (regFundo) {
+            regFundo.addEventListener('change', function () {
+                sincronizarTrazabilidadRegCampo({});
+                try { window.formHasChanges = true; } catch (_) {}
+            });
+        }
+        if (regEtapa) {
+            regEtapa.addEventListener('change', function () {
+                regRefrescarCampoDesdeEtapaActual();
+                try { window.formHasChanges = true; } catch (_) {}
+            });
+        }
+        sincronizarTrazabilidadRegCampo({});
+    })();
 
     // --- PACKING: helpers fecha/variedad, select ensayo, cargar datos, sync vista ---
     function formatearFechaParaVer(yyyyMmDd) {
@@ -2449,6 +2593,11 @@ function initApp() {
             tkEnHoja = !!flagEnsayoEnMap_(thermoKingYaEnviadoPorFecha[fecha], n);
         }
 
+        var fundoEl = document.getElementById('view_fundo');
+        var fundoNorm = fundoEl ? String(fundoEl.value || '').trim().toUpperCase() : '';
+        var fundoPermiteThermoKing = fundoNorm === 'A9';
+        var tipSoloA9 = 'Thermo King solo aplica cuando el fundo del registro es A9.';
+
         var optPk = sel.querySelector('option[value="pk"]');
         var optTk = sel.querySelector('option[value="tk"]');
         var optPkTk = sel.querySelector('option[value="pk-tk"]');
@@ -2458,11 +2607,11 @@ function initApp() {
 
         optPk.disabled = pkEnHoja;
         optPk.title = pkEnHoja ? tipDup : 'Solo Packing';
-        optTk.disabled = tkEnHoja;
-        optTk.title = tkEnHoja ? tipDup : 'Solo Thermo King';
-        /* Combinado solo si aún faltan ambos en hoja */
-        optPkTk.disabled = pkEnHoja || tkEnHoja;
-        optPkTk.title = (pkEnHoja || tkEnHoja) ? tipDup : 'Packing y Thermo King en el mismo envío';
+        optTk.disabled = tkEnHoja || !fundoPermiteThermoKing;
+        optTk.title = tkEnHoja ? tipDup : (!fundoPermiteThermoKing ? tipSoloA9 : 'Solo Thermo King');
+        /* Combinado solo si aún faltan ambos en hoja y el fundo permite TK (A9) */
+        optPkTk.disabled = pkEnHoja || tkEnHoja || !fundoPermiteThermoKing;
+        optPkTk.title = (pkEnHoja || tkEnHoja) ? tipDup : (!fundoPermiteThermoKing ? tipSoloA9 : 'Packing y Thermo King en el mismo envío');
 
         var cur = String(sel.value || '').trim();
         if (cur) {
@@ -2484,6 +2633,8 @@ function initApp() {
                 sel.title = 'Packing y Thermo King ya están en la hoja para este ensayo.';
             } else if (habilitadas.length === 0) {
                 sel.title = 'No hay formato disponible con el estado actual de la hoja.';
+            } else if (!fundoPermiteThermoKing) {
+                sel.title = 'Thermo King solo aplica con fundo A9; si el fundo es otro, solo puede elegirse Packing cuando falte en la hoja.';
             } else {
                 sel.title = 'Solo se habilita lo que aún falta registrar en la hoja (según Pk / TK).';
             }
@@ -2506,6 +2657,7 @@ function initApp() {
             var v = fundoEl ? String(fundoEl.value || '').trim().toUpperCase() : '';
             var chkTk = document.getElementById('chk_thermoking_habilitar');
             var datosOk = !!packingDatosCampoCargados;
+            var esFundoA9 = v === 'A9';
             if (!modo || !datosOk) {
                 return { guardar_packing: false, guardar_thermoking: false, guardar_c5: false };
             }
@@ -2514,10 +2666,10 @@ function initApp() {
             if (modo === 'pk') {
                 pk = true;
             } else if (modo === 'tk') {
-                tk = v !== '';
+                tk = esFundoA9;
             } else if (modo === 'pk-tk') {
                 pk = true;
-                tk = !!(v !== '' && chkTk && chkTk.checked && !chkTk.disabled);
+                tk = !!(esFundoA9 && chkTk && chkTk.checked && !chkTk.disabled);
             }
             return { guardar_packing: pk, guardar_thermoking: tk, guardar_c5: false };
         }
@@ -2919,7 +3071,10 @@ function initApp() {
                 if (!body) return;
                 var r = thermokingProgressPorFilas(body);
                 var filas = filasRegistradasEnBody(body);
-                var ok = refFilas > 0 && filas === refFilas && r.pct === 100;
+                /* Observaciones TK: mismas filas que peso; texto opcional (no exige celdas llenas). */
+                var ok = (id === 'body-thermoking-obs')
+                    ? (refFilas > 0 && filas === refFilas)
+                    : (refFilas > 0 && filas === refFilas && r.pct === 100);
                 if (ok) completosTk++;
             });
             var totalTk = idsTk.length;
@@ -2965,6 +3120,13 @@ function initApp() {
         var suma = 0;
         var completos = 0;
         wrappers.forEach(function (w) {
+            var wid = w.id || '';
+            /* Observaciones packing/C5: no arrastran el % del panel; se consideran completas sin exigir texto. */
+            if (wid === 'body-packing-8' || wid === 'body-packing-8_c5') {
+                suma += 100;
+                completos++;
+                return;
+            }
             var r = thermokingProgressPorFilas(w);
             var pctW = r.pct;
             // Sin filas registradas en el wrapper = incompleto en el total del panel.
@@ -2985,32 +3147,28 @@ function initApp() {
             'body-temperaturas': true,
             'body-humedad': true,
             'body-presion': true,
-            'body-presion-fruta': true,
-            'body-observacion': true
+            'body-presion-fruta': true
         };
         var packingBodiesConReglaFilas = {
             'body-packing-1': true,
             'body-packing-3': true,
             'body-packing-4': true,
             'body-packing-5': true,
-            'body-packing-6': true,
-            'body-packing-8': true
+            'body-packing-6': true
         };
         var c5BodiesConReglaFilas = {
             'body-packing-1_c5': true,
             'body-packing-3_c5': true,
             'body-packing-4_c5': true,
             'body-packing-5_c5': true,
-            'body-packing-6_c5': true,
-            'body-packing-8_c5': true
+            'body-packing-6_c5': true
         };
         var thermokingBodiesConReglaFilas = {
             'body-thermoking-tiempos': true,
             'body-thermoking-temperatura': true,
             'body-thermoking-humedad': true,
             'body-thermoking-presion-amb': true,
-            'body-thermoking-vapor-fruta': true,
-            'body-thermoking-obs': true
+            'body-thermoking-vapor-fruta': true
         };
         function filasRegistradasVisual() {
             var tb = document.getElementById('tbody-visual');
@@ -3052,43 +3210,55 @@ function initApp() {
             if (wrap.classList.contains('thermoking-progress-wrap--card')) {
                 var r = thermokingProgressPorFilas(root);
                 var pct = r.pct;
-                var completo = r.nFilas > 0 && pct === 100;
-                if (campoBodiesConReglaFilas[rootId]) {
-                    var ref = filasRegistradasVisual();
-                    if (ref > 0 && r.nFilas !== ref) completo = false;
-                }
-                if (packingBodiesConReglaFilas[rootId]) {
-                    var refPacking = filasRegistradasPacking2();
-                    if (refPacking > 0 && r.nFilas !== refPacking) completo = false;
-                }
-                if (c5BodiesConReglaFilas[rootId]) {
-                    var refPackingC5 = filasRegistradasPacking2C5();
-                    if (refPackingC5 > 0 && r.nFilas !== refPackingC5) completo = false;
-                }
-                if (thermokingBodiesConReglaFilas[rootId]) {
-                    var refTk = filasRegistradasThermokingPeso();
-                    if (refTk > 0 && r.nFilas !== refTk) completo = false;
-                    else if (refTk === 0) completo = false;
-                }
-                if (!completo && campoBodiesConReglaFilas[rootId]) {
-                    var ref2 = filasRegistradasVisual();
-                    if (ref2 > 0 && r.nFilas !== ref2) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + ref2 + ', igual que Visual)');
-                    else wrap.setAttribute('title', 'Falta completar una o más filas');
-                } else if (!completo && packingBodiesConReglaFilas[rootId]) {
-                    var refPacking2 = filasRegistradasPacking2();
-                    if (refPacking2 > 0 && r.nFilas !== refPacking2) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + refPacking2 + ', igual que Peso bruto muestra)');
-                    else wrap.setAttribute('title', 'Falta completar una o más filas');
-                } else if (!completo && c5BodiesConReglaFilas[rootId]) {
-                    var refPacking2C5 = filasRegistradasPacking2C5();
-                    if (refPacking2C5 > 0 && r.nFilas !== refPacking2C5) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + refPacking2C5 + ', igual que Peso bruto muestra C5)');
-                    else wrap.setAttribute('title', 'Falta completar una o más filas');
-                } else if (!completo && thermokingBodiesConReglaFilas[rootId]) {
-                    var refTk2 = filasRegistradasThermokingPeso();
-                    if (refTk2 > 0 && r.nFilas !== refTk2) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + refTk2 + ', igual que Peso Thermo King)');
-                    else if (refTk2 === 0) wrap.setAttribute('title', 'Primero registra filas en Peso Thermo King');
-                    else wrap.setAttribute('title', 'Falta completar una o más filas');
+                var obsOpcionalSiempreCompleto = {
+                    'body-observacion': true,
+                    'body-packing-8': true,
+                    'body-packing-8_c5': true,
+                    'body-thermoking-obs': true
+                };
+                var completo;
+                if (obsOpcionalSiempreCompleto[rootId]) {
+                    completo = true;
+                    wrap.setAttribute('title', 'Observaciones opcionales — no son obligatorias para guardar');
                 } else {
-                    wrap.setAttribute('title', completo ? 'Todas las filas registradas están completas' : 'Falta completar una o más filas');
+                    completo = r.nFilas > 0 && pct === 100;
+                    if (campoBodiesConReglaFilas[rootId]) {
+                        var ref = filasRegistradasVisual();
+                        if (ref > 0 && r.nFilas !== ref) completo = false;
+                    }
+                    if (packingBodiesConReglaFilas[rootId]) {
+                        var refPacking = filasRegistradasPacking2();
+                        if (refPacking > 0 && r.nFilas !== refPacking) completo = false;
+                    }
+                    if (c5BodiesConReglaFilas[rootId]) {
+                        var refPackingC5 = filasRegistradasPacking2C5();
+                        if (refPackingC5 > 0 && r.nFilas !== refPackingC5) completo = false;
+                    }
+                    if (thermokingBodiesConReglaFilas[rootId]) {
+                        var refTk = filasRegistradasThermokingPeso();
+                        if (refTk > 0 && r.nFilas !== refTk) completo = false;
+                        else if (refTk === 0) completo = false;
+                    }
+                    if (!completo && campoBodiesConReglaFilas[rootId]) {
+                        var ref2 = filasRegistradasVisual();
+                        if (ref2 > 0 && r.nFilas !== ref2) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + ref2 + ', igual que Visual)');
+                        else wrap.setAttribute('title', 'Falta completar una o más filas');
+                    } else if (!completo && packingBodiesConReglaFilas[rootId]) {
+                        var refPacking2 = filasRegistradasPacking2();
+                        if (refPacking2 > 0 && r.nFilas !== refPacking2) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + refPacking2 + ', igual que Peso bruto muestra)');
+                        else wrap.setAttribute('title', 'Falta completar una o más filas');
+                    } else if (!completo && c5BodiesConReglaFilas[rootId]) {
+                        var refPacking2C5 = filasRegistradasPacking2C5();
+                        if (refPacking2C5 > 0 && r.nFilas !== refPacking2C5) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + refPacking2C5 + ', igual que Peso bruto muestra C5)');
+                        else wrap.setAttribute('title', 'Falta completar una o más filas');
+                    } else if (!completo && thermokingBodiesConReglaFilas[rootId]) {
+                        var refTk2 = filasRegistradasThermokingPeso();
+                        if (refTk2 > 0 && r.nFilas !== refTk2) wrap.setAttribute('title', 'Filas registradas: ' + r.nFilas + ' (deben ser ' + refTk2 + ', igual que Peso Thermo King)');
+                        else if (refTk2 === 0) wrap.setAttribute('title', 'Primero registra filas en Peso Thermo King');
+                        else wrap.setAttribute('title', 'Falta completar una o más filas');
+                    } else {
+                        wrap.setAttribute('title', completo ? 'Todas las filas registradas están completas' : 'Falta completar una o más filas');
+                    }
                 }
                 markComplete = completo;
             } else {
@@ -3232,8 +3402,8 @@ function initApp() {
 
         var chkTk = document.getElementById('chk_thermoking_habilitar');
         var optInWrap = document.getElementById('packing_fundo_tk_optin');
-        /* Solo TK: casilla siempre marcada y bloqueada. PK+TK: casilla libre (casos especiales sin TK). */
-        var mostrarOptinTk = fmt && tieneFundo && datosOk && (pkTkMode || modoTkSolo);
+        /* Solo TK: casilla siempre marcada y bloqueada. PK+TK: casilla libre (casos especiales sin TK). Solo con fundo A9. */
+        var mostrarOptinTk = fmt && tieneFundo && datosOk && showA9 && (pkTkMode || modoTkSolo);
         if (optInWrap && chkTk) {
             if (mostrarOptinTk) {
                 optInWrap.removeAttribute('hidden');
@@ -3264,7 +3434,7 @@ function initApp() {
 
         var modoActivo = modo !== '' && datosOk;
         var showTk = false;
-        if (fmt && tieneFundo && datosOk && modoActivo) {
+        if (fmt && tieneFundo && datosOk && modoActivo && showA9) {
             if (modo === 'tk') {
                 showTk = true;
             } else if (modo === 'pk-tk' && chkTk && chkTk.checked && !chkTk.disabled) {
@@ -3662,7 +3832,7 @@ function initApp() {
         if (!stored) return { ok: true };
         var n = (stored.packing2 && stored.packing2.length) || 0;
         if (n === 0) return { ok: true };
-        var nombresSeccion = { packing1: 'Tiempos', packing2: 'Pesos', packing3: 'Temperatura', packing4: 'Humedad', packing5: 'Presión ambiente', packing6: 'Presión fruta', packing8: 'Observación' };
+        var nombresSeccion = { packing1: 'Tiempos', packing2: 'Pesos', packing3: 'Temperatura', packing4: 'Humedad', packing5: 'Presión ambiente', packing6: 'Presión fruta' };
         var vacio = function (v) { return v === null || v === undefined || (typeof v === 'string' && v.trim() === ''); };
         for (var i = 0; i < n; i++) {
             var p1 = (stored.packing1 && stored.packing1[i]) || {};
@@ -3678,8 +3848,7 @@ function initApp() {
             if (vacio(p5.recepcion) || vacio(p5.ingreso_gasificado) || vacio(p5.salida_gasificado) || vacio(p5.ingreso_prefrio) || vacio(p5.salida_prefrio)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing5 + '.', fila: i + 1, seccion: 'Presión ambiente' };
             var p6 = (stored.packing6 && stored.packing6[i]) || {};
             if (vacio(p6.recepcion) || vacio(p6.ingreso_gasificado) || vacio(p6.salida_gasificado) || vacio(p6.ingreso_prefrio) || vacio(p6.salida_prefrio)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de ' + nombresSeccion.packing6 + '.', fila: i + 1, seccion: 'Presión fruta' };
-            var p8 = (stored.packing8 && stored.packing8[i]) || {};
-            if (vacio(p8.observacion)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete el campo de ' + nombresSeccion.packing8 + '.', fila: i + 1, seccion: 'Observación' };
+            /* packing8 observación: opcional por fila */
         }
         return { ok: true };
     }
@@ -3728,8 +3897,7 @@ function initApp() {
             if (usarCamara && (vacio(v.ic) || vacio(v.scm))) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de Presión de vapor fruta Thermo King.' };
             var camposVapor = ['it', 'st'];
             for (var vI = 0; vI < camposVapor.length; vI++) if (vacio(v[camposVapor[vI]])) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete todos los campos de Presión de vapor fruta Thermo King.' };
-            var o = (stored.thermoking_obs && stored.thermoking_obs[i]) || {};
-            if (vacio(o.observacion)) return { ok: false, msg: 'Fila ' + (i + 1) + ': complete la observación de Thermo King.' };
+            /* thermoking_obs: texto opcional por muestra */
         }
         return { ok: true };
     }
@@ -9296,7 +9464,7 @@ function initApp() {
     function validarVisualCompletoParaGuardar(datosDelTipo, ensayosAIncluir) {
         if (!datosDelTipo || !ensayosAIncluir || ensayosAIncluir.length === 0) return { ok: true };
         const vacio = function (v) { return v === null || v === undefined || (typeof v === 'string' && String(v).trim() === ''); };
-        const nombresSeccion = { visual: 'Pesos (Visual)', temperaturas: 'Temperatura muestra', tiempos: 'Tiempos', humedad: 'Humedad', presionambiente: 'Presión ambiente', presionfruta: 'Presión fruta', observacion: 'Observación' };
+        const nombresSeccion = { visual: 'Pesos (Visual)', temperaturas: 'Temperatura muestra', tiempos: 'Tiempos', humedad: 'Humedad', presionambiente: 'Presión ambiente', presionfruta: 'Presión fruta' };
         for (let numE of ensayosAIncluir) {
             const ed = datosDelTipo[numE];
             if (!ed || !ed.visual || ed.visual.length === 0) continue;
@@ -9315,8 +9483,7 @@ function initApp() {
                 if (vacio(pAmb.inicio) || vacio(pAmb.termino) || vacio(pAmb.llegada) || vacio(pAmb.despacho)) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.presionambiente + '.', fila: i + 1, seccion: nombresSeccion.presionambiente, ensayo: numE };
                 const pFru = (ed.presionfruta && ed.presionfruta[i]) || {};
                 if (vacio(pFru.inicio) || vacio(pFru.termino) || vacio(pFru.llegada) || vacio(pFru.despacho)) return { ok: false, msg: 'complete todos los campos de ' + nombresSeccion.presionfruta + '.', fila: i + 1, seccion: nombresSeccion.presionfruta, ensayo: numE };
-                const obs = (ed.observacion && ed.observacion[i]) || {};
-                if (vacio(obs.observacion)) return { ok: false, msg: 'complete el campo de ' + nombresSeccion.observacion + '.', fila: i + 1, seccion: nombresSeccion.observacion, ensayo: numE };
+                /* Fila a fila de observaciones: texto opcional */
             }
         }
         return { ok: true };
@@ -10030,16 +10197,15 @@ function initApp() {
                                     try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
                                 };
                                 limpiarValor('reg_fecha', '');
-                                limpiarValor('reg_responsable', '');
+                                limpiarValor('reg_responsable', RESPONSABLE_CAMPO_PREDETERMINADO);
                                 limpiarValor('reg_guia_remision', '');
                                 limpiarValor('reg_variedad', '');
                                 limpiarValor('reg_placa', '');
                                 limpiarValor('reg_hora_inicio', '');
                                 limpiarValor('reg_dias_precosecha', '');
-                                limpiarValor('reg_traz_etapa', '');
-                                limpiarValor('reg_traz_campo', '');
                                 limpiarValor('reg_traz_libre', '');
                                 limpiarValor('reg_fundo', '');
+                                sincronizarTrazabilidadRegCampo({});
                                 limpiarValor('reg_observacion_formato', '');
                                 if (selTipo && tipoAntes) {
                                     try { selTipo.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}

@@ -7,6 +7,8 @@
     --border: #cccccc;
     --sidebar-width: 272px;
     --sidebar-muted: #64748b;
+    /* Controles nativos fecha/hora legibles en iOS/Android (incl. sin conexión / modo oscuro del sistema). */
+    color-scheme: light;
 }
 
 * { 
@@ -2838,6 +2840,34 @@ input[type="date"]:invalid,
 input[type="time"]:invalid {
     color: #333;
     -webkit-text-fill-color: #333;
+}
+
+/* Subcampos del control nativo de fecha (WebKit): evita texto blanco/invisible en algunos móviles. */
+input[type="date"]::-webkit-datetime-edit-year-field,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field {
+    color: #333;
+    -webkit-text-fill-color: #333;
+}
+
+/* Icono calendario/reloj siempre visible y clicable */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+    opacity: 1;
+    cursor: pointer;
+}
+
+/* Móvil: tamaño mínimo 16px (legibilidad iOS) + altura táctil + fondo explícito sin conexión */
+@media (max-width: 768px) {
+    input[type="date"],
+    input[type="time"] {
+        color-scheme: light;
+        font-size: max(16px, 1rem);
+        min-height: 44px;
+        line-height: 1.35;
+        background-color: #ffffff;
+        -webkit-text-fill-color: #333;
+    }
 }
 
 /* Filas ya ingresadas en packing: solo texto, sin inputs, para minimizar ancho */

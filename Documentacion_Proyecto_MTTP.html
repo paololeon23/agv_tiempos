@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Documentacion Proyecto MTTP Arandano</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; margin: 34px; line-height: 1.5; }
+    h1, h2, h3 { color: #0f3b66; margin-top: 22px; }
+    h1 { font-size: 24px; margin-top: 0; }
+    h2 { font-size: 19px; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; }
+    h3 { font-size: 16px; }
+    p, li { font-size: 13px; }
+    .muted { color: #6b7280; }
+    .box { border: 1px solid #d1d5db; background: #f9fafb; padding: 10px 12px; border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+    th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; }
+    code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Documentacion del Proyecto MTTP Arandano</h1>
+  <p class="muted">Version del documento: 1.0 | Fecha: 14/04/2026</p>
+
+  <div class="box">
+    <strong>Resumen ejecutivo</strong>
+    <p>
+      MTTP Arandano es una aplicacion web para registrar, validar, previsualizar y enviar datos operativos de Campo,
+      Packing, Thermo King y Recepcion C5. El sistema soporta trabajo con y sin internet, cola local de pendientes,
+      y generacion de PDF por formato. Para Agrovision Peru S.A.C., esta solucion puede presentarse tanto como
+      herramienta operativa actual como base formal de evolucion tecnica para el area de Desarrollo de Software.
+    </p>
+  </div>
+
+  <h2>1. Objetivo del sistema</h2>
+  <ul>
+    <li>Digitalizar el registro de mediciones por ensayo y fecha.</li>
+    <li>Reducir errores de captura mediante validaciones de negocio.</li>
+    <li>Garantizar trazabilidad de datos enviados y pendientes.</li>
+    <li>Permitir operacion offline con sincronizacion posterior.</li>
+  </ul>
+
+  <h2>2. Alcance funcional</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Modulo</th>
+        <th>Funcionalidad principal</th>
+        <th>Salida</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Campo</td>
+        <td>Captura por ensayo de pesos, tiempos, temperatura, humedad, presion y observaciones.</td>
+        <td>Registro en hoja + PDF de Calibrado Visual.</td>
+      </tr>
+      <tr>
+        <td>Formato Packing</td>
+        <td>Captura de tiempos y pesos de proceso con validaciones por orden y limites.</td>
+        <td>Registro en hoja + PDF de Packing.</td>
+      </tr>
+      <tr>
+        <td>Thermo King</td>
+        <td>Captura de tiempos/pesos/temperatura/humedad/presion con reglas de Camara MP.</td>
+        <td>Registro en hoja + PDF Thermo King.</td>
+      </tr>
+      <tr>
+        <td>Recepcion C5</td>
+        <td>Registro especializado para C5 con bloqueo por estado y consistencia de filas.</td>
+        <td>Actualizacion en hoja + PDF Recepcion C5.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>3. Arquitectura tecnica</h2>
+  <ul>
+    <li><strong>Frontend:</strong> <code>index.html</code>, <code>style.css</code>, <code>script.js</code>.</li>
+    <li><strong>Servicios de red/cache:</strong> <code>network.js</code>.</li>
+    <li><strong>Backend:</strong> Google Apps Script en <code>Code.gs</code>.</li>
+    <li><strong>Persistencia local:</strong> localStorage (cola Campo y cola Packing/C5).</li>
+    <li><strong>Canal servidor:</strong> endpoint Apps Script (JSONP para GET, POST para guardado).</li>
+  </ul>
+
+  <h2>4. Tecnologias utilizadas (estado actual)</h2>
+  <ul>
+    <li><strong>Frontend web:</strong> HTML5, CSS3, JavaScript.</li>
+    <li><strong>Backend:</strong> Google Apps Script (<code>Code.gs</code>) sobre Google Sheets.</li>
+    <li><strong>Comunicacion:</strong> JSONP para consultas GET y POST HTTP para guardado.</li>
+    <li><strong>Persistencia local:</strong> localStorage para cache y colas offline.</li>
+    <li><strong>UX/Alertas:</strong> SweetAlert2 para mensajes de validacion y estado.</li>
+    <li><strong>PDF:</strong> jsPDF (incluyendo operacion offline con libreria local).</li>
+  </ul>
+
+  <h2>5. Operacion sin internet</h2>
+  <ul>
+    <li>Si no hay red, los datos se guardan en cola local (<code>pendiente</code>).</li>
+    <li>Al recuperar conexion, el sistema sincroniza automaticamente.</li>
+    <li>El estado visual de red y pendientes se actualiza en interfaz.</li>
+    <li>La app mantiene cache de consultas para continuidad operativa.</li>
+  </ul>
+
+  <h2>6. Flujo de uso recomendado</h2>
+  <ol>
+    <li>Seleccionar fecha y ensayo.</li>
+    <li>Cargar datos base de hoja cuando aplique.</li>
+    <li>Completar registros por wrapper respetando validaciones.</li>
+    <li>Previsualizar PDF.</li>
+    <li>Guardar/Enviar (o encolar si no hay red).</li>
+    <li>Verificar confirmacion y pendientes.</li>
+  </ol>
+
+  <h2>7. Seguridad y calidad de datos</h2>
+  <ul>
+    <li>Prevencion de duplicados por fecha y ensayo.</li>
+    <li>Validaciones previas en UI y validacion de consistencia por filas.</li>
+    <li>Trazabilidad por ensayo y modulo.</li>
+    <li>Manejo de errores con feedback claro (SweetAlert).</li>
+  </ul>
+
+  <h2>8. Evaluacion de migracion a OneDrive / SharePoint</h2>
+  <p>
+    La empresa puede evaluar migrar el repositorio documental y la capa de almacenamiento operativo a ecosistema Microsoft
+    (OneDrive / SharePoint). Esta decision debe considerar impacto tecnico, seguridad, costo y continuidad de operacion.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Escenario</th>
+        <th>Ventajas</th>
+        <th>Riesgos / Ajustes requeridos</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Mantener modelo actual (Apps Script + Sheets)</td>
+        <td>Operativo hoy, bajo esfuerzo adicional, alta velocidad de implementacion.</td>
+        <td>Dependencia Google Workspace para backend y procesos de integracion.</td>
+      </tr>
+      <tr>
+        <td>Migrar a SharePoint/OneDrive + stack Microsoft</td>
+        <td>Alineacion con plataforma corporativa, gobierno de datos centralizado en Microsoft 365.</td>
+        <td>Requiere rediseño de backend/API, autenticacion, permisos y procesos de sincronizacion.</td>
+      </tr>
+      <tr>
+        <td>Modelo hibrido (corto plazo)</td>
+        <td>Permite operar sin frenar negocio mientras se disena migracion formal.</td>
+        <td>Mayor complejidad temporal por coexistencia de dos entornos.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Recomendacion ejecutiva</h3>
+  <p>
+    Se recomienda presentar MTTP Arandano como prototipo formal funcional para Agrovision Peru S.A.C. y para el area de
+    Desarrollo de Aplicaciones/Software, con decision en dos vias:
+  </p>
+  <ul>
+    <li>Via A: Continuidad operativa inmediata sobre stack actual.</li>
+    <li>Via B: Plan de migracion por fases a SharePoint/OneDrive segun lineamientos TI corporativos.</li>
+  </ul>
+  <p>
+    Si por recomendaciones adicionales, lineamientos de seguridad mas amplios o ajustes corporativos se solicita mayor
+    fortalecimiento, el proyecto puede mantenerse como prototipo formal y ser mejorado por el area de Desarrollo de
+    Software sin perder el avance ya validado funcionalmente.
+  </p>
+
+  <h2>9. Diferencia de despliegue: App movil vs App web instalable</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Modalidad</th>
+        <th>Caracteristica</th>
+        <th>Implicancia para la empresa</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Aplicacion movil tradicional (Play Store)</td>
+        <td>Se descarga e instala desde tienda, requiere ciclo de publicacion y versionado de app movil.</td>
+        <td>Mayor esfuerzo de distribucion y mantenimiento por plataforma movil.</td>
+      </tr>
+      <tr>
+        <td>Aplicacion web instalable (navegador)</td>
+        <td>Corre en web y puede instalarse desde el navegador como acceso directo tipo app.</td>
+        <td>Despliegue mas rapido, actualizacion centralizada y menor friccion operativa.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Para Agrovision Peru S.A.C., el enfoque web instalable permite acelerar adopcion operativa y mantener flexibilidad
+    para una evolucion posterior hacia un producto empresarial mas amplio.
+  </p>
+
+  <h2>10. Recomendaciones de mantenimiento</h2>
+  <ul>
+    <li>Mantener versionado de reglas de negocio en cambios de proceso.</li>
+    <li>Realizar pruebas E2E online/offline por cada ajuste importante.</li>
+    <li>Documentar en changelog los cambios de validacion y PDF.</li>
+    <li>Definir checklist de salida para despliegues productivos.</li>
+  </ul>
+
+  <h2>11. Anexos (referencia de archivos)</h2>
+  <ul>
+    <li><code>Code.gs</code>: logica backend en Apps Script.</li>
+    <li><code>script.js</code>: logica principal de UI, validacion y flujos.</li>
+    <li><code>network.js</code>: conectividad, cache y colas offline.</li>
+    <li><code>index.html</code>: estructura de vistas y wrappers.</li>
+    <li><code>style.css</code>: estilos y comportamiento visual.</li>
+  </ul>
+
+</body>
+</html>
