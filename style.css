@@ -680,6 +680,14 @@ label .lucide {
     padding: 20px 14px;
     margin: 0 0 12px;
 }
+/*
+ * Ocultar hasta fundo A9: en #recepcion-c5 la fila interna ya va en .packing-rc5-oculto (solo dejaba franja vacía).
+ * En #formato-packing, .packing-container--fundo-a9 la pone syncThermoKingWrapperVisibility() cuando view_fundo es A9.
+ */
+#view_packing_container.packing-route--recepcion-c5 .packing-datos-top-block:not(.packing-datos-top-block--c5),
+#view_packing_container:not(.packing-route--recepcion-c5):not(.packing-container--fundo-a9) .packing-datos-top-block:not(.packing-datos-top-block--c5) {
+    display: none !important;
+}
 .packing-datos-top-block > .row {
     flex-wrap: nowrap;
     align-items: flex-start;
@@ -2857,16 +2865,36 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     cursor: pointer;
 }
 
-/* Móvil: tamaño mínimo 16px (legibilidad iOS) + altura táctil + fondo explícito sin conexión */
+/* Móvil: ≥16px fuente (evita zoom iOS/Android al enfocar); altura menor que 44px para acercar a inputs numéricos */
 @media (max-width: 768px) {
     input[type="date"],
     input[type="time"] {
         color-scheme: light;
         font-size: max(16px, 1rem);
-        min-height: 44px;
-        line-height: 1.35;
+        min-height: 36px;
+        line-height: 1.22;
         background-color: #ffffff;
         -webkit-text-fill-color: #333;
+    }
+    /* Hora en tablas Packing / Thermo / C5: un poco más baja que cabeceras de fecha */
+    .table-field-style input[type="time"],
+    .input-table-row input[type="time"],
+    .packing-native-time-wrap input[type="time"] {
+        min-height: 34px;
+        line-height: 1.15;
+    }
+    .packing-native-time-wrap input[type="time"]::-webkit-datetime-edit,
+    .packing-native-time-wrap input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+        margin-left: 0 !important;
+    }
+    .table-field-style input[type="time"]::-webkit-calendar-picker-indicator,
+    .input-table-row input[type="time"]::-webkit-calendar-picker-indicator,
+    .packing-native-time-wrap input[type="time"]::-webkit-calendar-picker-indicator {
+        width: 18px;
+        height: 18px;
+    }
+    .packing-native-time-wrap input[type="time"]::-webkit-calendar-picker-indicator {
+        margin-left: 0;
     }
 }
 
@@ -2995,6 +3023,33 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     background: #1a5a8e !important;
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
+}
+
+/* Hora nativa: input type="time" a ancho completo */
+.packing-native-time-wrap {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+.packing-native-time-wrap .packing-time-input,
+.packing-native-time-wrap input[type="time"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+}
+.packing-meta-block .packing-native-time-wrap--meta,
+.thermoking-meta-row .packing-native-time-wrap {
+    width: 100%;
+}
+
+/* Fecha en cabecera Packing: ancho mínimo para ver y cambiar día/mes/año en celular */
+.packing-datos-top-block input[type="date"],
+.packing-fecha-ensayo-row .col-fecha input[type="date"] {
+    width: 100%;
+    min-width: 11rem;
+    box-sizing: border-box;
 }
 
 /* Botón "+" minimalista */

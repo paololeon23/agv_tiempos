@@ -321,18 +321,35 @@ function aplicarValoresFechaHoraPorDefecto() {
     var hoy = fechaLocalHoy();
     var regFecha = document.getElementById('reg_fecha');
     if (regFecha) setNativeDateValue(regFecha, hoy);
-    var vfi = document.getElementById('view_fecha_inspeccion');
-    if (vfi && !String(vfi.value || '').trim()) setNativeDateValue(vfi, hoy);
-    var vhr = document.getElementById('view_hora_recepcion');
-    if (vhr && !String(vhr.value || '').trim()) setNativeTimeValue(vhr, '07:15');
     var viewFecha = document.getElementById('view_fecha');
     if (viewFecha && !String(viewFecha.value || '').trim()) setNativeDateValue(viewFecha, hoy);
+    var vfi = document.getElementById('view_fecha_inspeccion');
+    if (vfi && !String(vfi.value || '').trim()) {
+        var refIns = viewFecha && String(viewFecha.value || '').trim() ? String(viewFecha.value).trim() : hoy;
+        setNativeDateValue(vfi, refIns);
+    }
+    var vhr = document.getElementById('view_hora_recepcion');
+    if (vhr && !String(vhr.value || '').trim()) setNativeTimeValue(vhr, '07:15');
     var viewFechaRc5 = document.getElementById('view_fecha_rc5');
     if (viewFechaRc5 && !String(viewFechaRc5.value || '').trim()) setNativeDateValue(viewFechaRc5, hoy);
     var regHoraIni = document.getElementById('reg_hora_inicio');
     if (regHoraIni && !String(regHoraIni.value || '').trim()) setNativeTimeValue(regHoraIni, '07:15');
     var regResp = document.getElementById('reg_responsable');
     if (regResp && !String(regResp.value || '').trim()) regResp.value = RESPONSABLE_CAMPO_PREDETERMINADO;
+}
+
+/**
+ * #formato-packing: fecha de inspección alineada a la fecha del registro (o hoy) para que siempre se vea en móvil.
+ * Sin disparar change en view_fecha (evita limpiar ensayo).
+ */
+function asegurarFechasMetaPackingVisibles() {
+    var hoy = fechaLocalHoy();
+    var vf = document.getElementById('view_fecha');
+    var vfi = document.getElementById('view_fecha_inspeccion');
+    if (!vfi) return;
+    if (String(vfi.value || '').trim()) return;
+    var ref = vf && String(vf.value || '').trim() ? String(vf.value).trim() : hoy;
+    setNativeDateValue(vfi, ref, { silent: true });
 }
 
 function initApp() {
@@ -370,6 +387,7 @@ function initApp() {
     // --- Inicio: aviso salir, iconos ---
     window.formHasChanges = false;
     aplicarValoresFechaHoraPorDefecto();
+    asegurarFechasMetaPackingVisibles();
     if (window.lucide) lucide.createIcons();
 
     // Con internet: rellenar caché de GET (fechas, listado) para usarlos offline; al volver online sincronizar colas y refrescar caché
@@ -707,6 +725,7 @@ function initApp() {
                     refrescarOpcionesEnsayoDesdeCache();
                     /* Solo fecha: no copiar ensayo aquí (carrera con await getEnsayosPorFecha en el change de view_fecha). */
                     syncFechaEspejoSoloFechaDesdePrimario();
+                    try { asegurarFechasMetaPackingVisibles(); } catch (eFmeta2) {}
                     scheduleActualizarBloqueoSelectEnsayoFormatoPacking();
                     scheduleActualizarBloqueoWrapperPackingPanelHoja();
                 }, 0);
@@ -722,6 +741,7 @@ function initApp() {
                     else packingInicializarBusquedaAutomatica();
                     refrescarOpcionesEnsayoDesdeCache();
                     syncFechaEspejoSoloFechaDesdePrimario();
+                    try { asegurarFechasMetaPackingVisibles(); } catch (eFmetaRc5) {}
                     scheduleActualizarBloqueoSelectEnsayoFormatoPacking();
                     scheduleActualizarBloqueoWrapperPackingPanelHoja();
                     try { applyRecepcionC5TemplatePrimerInputLock(); } catch (eRc5V) {}
@@ -2078,6 +2098,7 @@ function initApp() {
                 /* render/sync ocurrió con el primario disabled; el espejo RC5 copió disabled=true. Re-sincronizar ya habilitado. */
                 syncFechaEnsayoEspejoDesdePrimario();
                 validarFechaInspeccionVsFechaPacking();
+                try { asegurarFechasMetaPackingVisibles(); } catch (eFmeta) {}
                 if (typeof actualizarBannerFormatoPacking === 'function') actualizarBannerFormatoPacking();
                 scheduleActualizarBloqueoSelectEnsayoFormatoPacking();
                 scheduleActualizarBloqueoWrapperPackingPanelHoja();
@@ -3392,6 +3413,8 @@ function initApp() {
         var fundoEl = document.getElementById('view_fundo');
         var v = fundoEl ? String(fundoEl.value || '').trim().toUpperCase() : '';
         var showA9 = v === 'A9';
+        var vpc = document.getElementById('view_packing_container');
+        if (vpc) vpc.classList.toggle('packing-container--fundo-a9', showA9);
         var tieneFundo = v !== '';
         var fmt = currentSidebarView === 'formato-packing';
         var rc5 = currentSidebarView === 'recepcion-c5';
@@ -3622,8 +3645,7 @@ function initApp() {
             datosPacking.packing4.length,
             datosPacking.packing5.length,
             datosPacking.packing6.length,
-            datosPacking.packing7.length,
-            datosPacking.packing8.length
+            (datosPacking.packing7 && datosPacking.packing7.length) || 0
         );
         return len;
     }
@@ -3768,7 +3790,8 @@ function initApp() {
     function getPackingRowCountFromStored(stored) {
         if (!stored) return 0;
         var len = 0;
-        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7', 'packing8'].forEach(function (k) {
+        /* packing8 (observaciones) no cuenta: puede ir vacío aunque haya filas en el resto. */
+        ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing7'].forEach(function (k) {
             var arr = stored[k];
             if (arr && arr.length > len) len = arr.length;
         });
@@ -3791,7 +3814,8 @@ function initApp() {
     function getC5RowCountFromStored(stored) {
         if (!stored) return 0;
         var len = 0;
-        ['packing1_c5', 'packing2_c5', 'packing3_c5', 'packing4_c5', 'packing5_c5', 'packing6_c5', 'packing8_c5'].forEach(function (k) {
+        /* packing8_c5 (observaciones) no cuenta frente a Visual / cantidad de muestras. */
+        ['packing1_c5', 'packing2_c5', 'packing3_c5', 'packing4_c5', 'packing5_c5', 'packing6_c5'].forEach(function (k) {
             var arr = stored[k];
             if (arr && arr.length > len) len = arr.length;
         });
@@ -3815,10 +3839,10 @@ function initApp() {
         return (stored.thermoking_peso && stored.thermoking_peso.length) || 0;
     }
 
-    /** Comprueba que las 7 secciones de packing tengan la misma cantidad de filas tomando PACKING 2 (pesos) como base. */
+    /** Comprueba que packing1 y 3–6 tengan la misma cantidad de filas que PACKING 2 (pesos). packing8 (observaciones) es independiente. */
     function validarConsistenciaFilasPacking(stored) {
         if (!stored) return { ok: true };
-        var keys = ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6', 'packing8'];
+        var keys = ['packing1', 'packing2', 'packing3', 'packing4', 'packing5', 'packing6'];
         var lenBase = (stored.packing2 && stored.packing2.length) || 0;
         for (var i = 0; i < keys.length; i++) {
             var L = (stored[keys[i]] && stored[keys[i]].length) || 0;
@@ -4872,7 +4896,7 @@ function initApp() {
                     if (!valid.ok) {
                         Swal.fire({
                             title: 'Inconsistencia de filas',
-                            html: 'El <strong>Ensayo ' + ensayosAEnviar[v] + '</strong> no tiene la misma cantidad de filas en todas las secciones (Packing 1 a 8).<br><br>Las filas deben coincidir en total antes de enviar.',
+                            html: 'El <strong>Ensayo ' + ensayosAEnviar[v] + '</strong> no tiene la misma cantidad de filas en Tiempos, Pesos, temperatura, humedad y presiones (Packing 1 a 6).<br><br><strong>Observaciones por muestra</strong> no cuenta en esta comprobación. Las filas deben coincidir antes de enviar.',
                             icon: 'error',
                             confirmButtonColor: '#d33'
                         });

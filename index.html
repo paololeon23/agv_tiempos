@@ -821,7 +821,9 @@
                                 <div class="row packing-row-packing-meta">
                                     <div class="col">
                                         <label><i data-lucide="clock"></i> Hora Inicio Recepción</label>
-                                        <input type="time" id="view_hora_recepcion" name="view_hora_recepcion" placeholder="Hora Inicio Recepción">
+                                        <div class="packing-native-time-wrap packing-native-time-wrap--meta">
+                                            <input type="time" id="view_hora_recepcion" name="view_hora_recepcion" class="packing-time-input" placeholder="Hora Inicio Recepción">
+                                        </div>
                                     </div>
                                     <div class="col">
                                         <label><i data-lucide="navigation"></i> N° Viaje</label>
@@ -860,11 +862,11 @@
                                     <tbody id="tbody-packing-capture-1">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing">1</span></td>
-                                            <td><input type="time" class="packing-time-no-clock" id="reg_packing_recepcion" name="reg_packing_recepcion"></td>
-                                            <td><input type="time" class="packing-time-no-clock" id="reg_packing_ingreso_gasificado" name="reg_packing_ingreso_gasificado"></td>
-                                            <td><input type="time" class="packing-time-no-clock" id="reg_packing_salida_gasificado" name="reg_packing_salida_gasificado"></td>
-                                            <td><input type="time" class="packing-time-no-clock" id="reg_packing_ingreso_prefrio" name="reg_packing_ingreso_prefrio"></td>
-                                            <td><input type="time" class="packing-time-no-clock" id="reg_packing_salida_prefrio" name="reg_packing_salida_prefrio"></td>
+                                            <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_recepcion" name="reg_packing_recepcion"></div></td>
+                                            <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_ingreso_gasificado" name="reg_packing_ingreso_gasificado"></div></td>
+                                            <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_salida_gasificado" name="reg_packing_salida_gasificado"></div></td>
+                                            <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_ingreso_prefrio" name="reg_packing_ingreso_prefrio"></div></td>
+                                            <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_salida_prefrio" name="reg_packing_salida_prefrio"></div></td>
                                             <td class="b-right">
                                                 <button type="button" id="btn-add-packing" class="btn-mini-add">
                                                     <i data-lucide="plus"></i>
@@ -1206,7 +1208,9 @@
                                 <div class="row thermoking-meta-row thermoking-meta-row--hora-placa">
                                     <div class="col">
                                         <label for="hora_salida_thermoking"><i data-lucide="log-out"></i> Hora salida frío</label>
-                                        <input type="time" id="hora_salida_thermoking" name="hora_salida_thermoking" class="packing-time-no-clock" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                        <div class="packing-native-time-wrap packing-native-time-wrap--meta">
+                                            <input type="time" id="hora_salida_thermoking" name="hora_salida_thermoking" class="packing-time-input" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                        </div>
                                     </div>
                                     <div class="col">
                                         <label for="placa_thermoking"><i data-lucide="truck"></i> Placa Thermo King</label>
@@ -1243,10 +1247,10 @@
                                                 <tbody>
                                                     <tr class="input-table-row">
                                                         <td class="b-left"><span id="next_clam_thermoking_tiempos">1</span></td>
-                                                        <td><input type="time" class="packing-time-no-clock" id="ingreso_camaraMP_tiempos_thermoking" name="ingreso_camaraMP_tiempos_thermoking" title="Ingreso cámara MP"></td>
-                                                        <td><input type="time" class="packing-time-no-clock" id="salida_camaraMP_tiempos_thermoking" name="salida_camaraMP_tiempos_thermoking" title="Salida cámara MP"></td>
-                                                        <td><input type="time" class="packing-time-no-clock" id="inicio_traslado_tiempos_thermoking" name="inicio_traslado_tiempos_thermoking" title="Inicio traslado T-H"></td>
-                                                        <td><input type="time" class="packing-time-no-clock" id="despacho_tiempos_thermoking" name="despacho_tiempos_thermoking" title="Despacho T-H"></td>
+                                                        <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="ingreso_camaraMP_tiempos_thermoking" name="ingreso_camaraMP_tiempos_thermoking" title="Ingreso cámara MP"></div></td>
+                                                        <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="salida_camaraMP_tiempos_thermoking" name="salida_camaraMP_tiempos_thermoking" title="Salida cámara MP"></div></td>
+                                                        <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="inicio_traslado_tiempos_thermoking" name="inicio_traslado_tiempos_thermoking" title="Inicio traslado T-H"></div></td>
+                                                        <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="despacho_tiempos_thermoking" name="despacho_tiempos_thermoking" title="Despacho T-H"></div></td>
                                                         <td class="b-right">
                                                             <button type="button" id="btn-add-thermoking-tiempos" class="btn-mini-add" title="Agregar fila">
                                                                 <i data-lucide="plus"></i>
@@ -1570,7 +1574,9 @@
                                 <div class="row packing-c5-meta-top">
                                     <div class="col">
                                         <label for="hora_inicio_recepcion_c5"><i data-lucide="log-in"></i> Hora inicio recepción</label>
-                                        <input type="time" id="hora_inicio_recepcion_c5" name="hora_inicio_recepcion_c5" class="packing-time-no-clock" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                        <div class="packing-native-time-wrap packing-native-time-wrap--meta">
+                                            <input type="time" id="hora_inicio_recepcion_c5" name="hora_inicio_recepcion_c5" class="packing-time-input" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                        </div>
                                     </div>
                                     <div class="col">
                                         <label for="responsable_c5"><i data-lucide="user"></i> Responsable</label>
@@ -1588,7 +1594,7 @@
                                     <div class="card-body" id="body-packing-1_c5">
                                         <div class="table-scroll"><table class="table-field-style"><thead><tr><th class="b-left">N°</th><th><i data-lucide="download"></i><br>RECEP.</th><th><i data-lucide="log-in"></i><br>IN. GAS.</th><th><i data-lucide="log-out"></i><br>SAL. GAS.</th><th><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th><th><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th><th class="b-right">ACCION</th></tr></thead>
                                         <tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_packing_c5">1</span></td>
-                                        <td><input type="time" class="packing-time-no-clock" id="reg_packing_recepcion_c5" name="reg_packing_recepcion_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_ingreso_gasificado_c5" name="reg_packing_ingreso_gasificado_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_salida_gasificado_c5" name="reg_packing_salida_gasificado_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_ingreso_prefrio_c5" name="reg_packing_ingreso_prefrio_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_salida_prefrio_c5" name="reg_packing_salida_prefrio_c5"></td>
+                                        <td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_recepcion_c5" name="reg_packing_recepcion_c5"></div></td><td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_ingreso_gasificado_c5" name="reg_packing_ingreso_gasificado_c5"></div></td><td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_salida_gasificado_c5" name="reg_packing_salida_gasificado_c5"></div></td><td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_ingreso_prefrio_c5" name="reg_packing_ingreso_prefrio_c5"></div></td><td><div class="packing-native-time-wrap"><input type="time" class="packing-time-input" id="reg_packing_salida_prefrio_c5" name="reg_packing_salida_prefrio_c5"></div></td>
                                         <td class="b-right"><button type="button" id="btn-add-packing_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody>
                                         <tbody id="tbody-packing-1_c5"></tbody></table></div>
                                     </div>
