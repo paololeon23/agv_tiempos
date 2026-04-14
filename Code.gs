@@ -1,13 +1,271 @@
 /**
  * Google Apps Script - MTTP Arándano
  * Recibe datos del formulario y los escribe en la hoja activa.
- * Hoja 1: 46 cols registro + 38 packing = 84 cols. INICIO_C..MIN_T están en Hoja 2.
+ * Hoja 1: 46 cols registro + 40 packing + Thermo King (39 cols: 2 meta + 37 datos) + Recepción C5.
  *
  * ANTI-DUPLICADOS: UID + clave de fila normalizada.
  *
- * --- PACKING (cols 47–84) ---
+ * --- PACKING (cols 47–86) ---
  * GET → data.fila y despachoPorFila. POST packing → escribe desde col 47.
  */
+var PACKING_START_COL = 47; // 40 columnas (47..86)
+var PACKING_COLS = 40;
+var THERMOKING_START_COL = PACKING_START_COL + PACKING_COLS; // 87 (CI)
+/** Debe coincidir con getThermokingFlatHeaders().length (2 meta + 37 datos). */
+var THERMOKING_COLS = 39;
+var C5_START_COL = THERMOKING_START_COL + THERMOKING_COLS; // 126
+
+/** Número de columnas del bloque Thermo en hoja (evita desfase GET/POST). */
+function getThermokingSheetColumnCount_() {
+  return getThermokingFlatHeaders().length;
+}
+
+/** Una fila de muestra Thermo King: FECHA/RESP meta + HORA/PLACA + tiempos + peso + temp + humedad + presión + vapor + obs. */
+function getThermokingFlatHeaders() {
+  return [
+    'FECHA_INSPECCION_THERMOKING',
+    'RESPONSABLE_THERMOKING',
+    'HORA_SALIDA_THERMOKING',
+    'PLACA_THERMOKING',
+    'THERMOKING_TIEMPO_INGRESO_CAMARA',
+    'THERMOKING_TIEMPO_SALIDA_CAMARA',
+    'THERMOKING_TIEMPO_INICIO_TRASLADO',
+    'THERMOKING_TIEMPO_DESPACHO',
+    'THERMOKING_PESO_INGRESO_CAMARA',
+    'THERMOKING_PESO_SALIDA_TRASLADO',
+    'THERMOKING_PESO_INICIO_TRASLADO',
+    'THERMOKING_PESO_DESPACHO',
+    'THERMOKING_TEMP_IC_CM',
+    'THERMOKING_TEMP_IC_PULPA',
+    'THERMOKING_TEMP_ST_CM',
+    'THERMOKING_TEMP_ST_PULPA',
+    'THERMOKING_TEMP_TRASLADO_AMB',
+    'THERMOKING_TEMP_TRASLADO_VEHICULO',
+    'THERMOKING_TEMP_TRASLADO_PULPA',
+    'THERMOKING_TEMP_DESPACHO_AMB',
+    'THERMOKING_TEMP_DESPACHO_VEHICULO',
+    'THERMOKING_TEMP_DESPACHO_PULPA',
+    'THERMOKING_HUM_INGRESO_CAMARA',
+    'THERMOKING_HUM_SALIDA_TRASLADO',
+    'THERMOKING_HUM_AMB_EXT_INICIO',
+    'THERMOKING_HUM_INT_VEH_INICIO',
+    'THERMOKING_HUM_AMB_EXT_DESPACHO',
+    'THERMOKING_HUM_INT_VEH_DESPACHO',
+    'THERMOKING_PRESION_INGRESO_CAMARA',
+    'THERMOKING_PRESION_SALIDA_TRASLADO',
+    'THERMOKING_PRESION_AMB_EXT_INICIO',
+    'THERMOKING_PRESION_INT_VEH_INICIO',
+    'THERMOKING_PRESION_AMB_EXT_DESPACHO',
+    'THERMOKING_PRESION_INT_VEH_DESPACHO',
+    'THERMOKING_VAPOR_INGRESO_CAMARA',
+    'THERMOKING_VAPOR_SALIDA_CAMARA',
+    'THERMOKING_VAPOR_INICIO_TRASLADO',
+    'THERMOKING_VAPOR_SALIDA_TRASLADO',
+    'THERMOKING_OBSERVACION'
+  ];
+}
+
+/** Recepción C5: 2 meta + mismos 36 campos de datos que una fila packing (sin JSON). */
+function getC5FlatHeaders() {
+  return [
+    'HORA_INICIO_RECEPCION_C5',
+    'PLACA_C5',
+    'C5_RECEPCION',
+    'C5_INGRESO_GASIFICADO',
+    'C5_SALIDA_GASIFICADO',
+    'C5_INGRESO_PREFRIO',
+    'C5_SALIDA_PREFRIO',
+    'C5_PESO_RECEPCION',
+    'C5_PESO_INGRESO_GASIFICADO',
+    'C5_PESO_SALIDA_GASIFICADO',
+    'C5_PESO_INGRESO_PREFRIO',
+    'C5_PESO_SALIDA_PREFRIO',
+    'C5_T_AMB_RECEP',
+    'C5_T_PULP_RECEP',
+    'C5_T_AMB_ING',
+    'C5_T_PULP_ING',
+    'C5_T_AMB_SAL',
+    'C5_T_PULP_SAL',
+    'C5_T_AMB_PRE_IN',
+    'C5_T_PULP_PRE_IN',
+    'C5_T_AMB_PRE_OUT',
+    'C5_T_PULP_PRE_OUT',
+    'C5_HUMEDAD_RECEPCION',
+    'C5_HUMEDAD_INGRESO_GASIFICADO',
+    'C5_HUMEDAD_SALIDA_GASIFICADO',
+    'C5_HUMEDAD_INGRESO_PREFRIO',
+    'C5_HUMEDAD_SALIDA_PREFRIO',
+    'C5_PRESION_AMB_RECEPCION',
+    'C5_PRESION_AMB_INGRESO_GASIFICADO',
+    'C5_PRESION_AMB_SALIDA_GASIFICADO',
+    'C5_PRESION_AMB_INGRESO_PREFRIO',
+    'C5_PRESION_AMB_SALIDA_PREFRIO',
+    'C5_PRESION_FRUTA_RECEPCION',
+    'C5_PRESION_FRUTA_INGRESO_GASIFICADO',
+    'C5_PRESION_FRUTA_SALIDA_GASIFICADO',
+    'C5_PRESION_FRUTA_INGRESO_PREFRIO',
+    'C5_PRESION_FRUTA_SALIDA_PREFRIO',
+    'C5_OBSERVACION'
+  ];
+}
+
+function strCell_(v) {
+  if (v === null || v === undefined) return '';
+  return String(v);
+}
+
+/** True si alguna celda del array (una fila de getValues) tiene texto no vacío. */
+function rowHasAnyNonEmpty_(arr) {
+  if (!arr || !arr.length) return false;
+  for (var i = 0; i < arr.length; i++) {
+    if (arr[i] != null && String(arr[i]).trim() !== '') return true;
+  }
+  return false;
+}
+
+/** Lee una fila horizontal [startCol .. startCol+numCols-1] (índices de columna 1-based). */
+function getSheetRowValues_(sheet, row, startCol, numCols) {
+  if (numCols <= 0 || row < 1) return [];
+  var endCol = startCol + numCols - 1;
+  return sheet.getRange(row, startCol, row, endCol).getValues()[0];
+}
+
+/** Escribe un array en una sola fila desde startCol. */
+function setSheetRowValues_(sheet, row, startCol, arr) {
+  if (!arr || !arr.length || row < 1) return;
+  var endCol = startCol + arr.length - 1;
+  sheet.getRange(row, startCol, row, endCol).setValues([arr]);
+}
+
+/** True si en esa fila de hoja hay al menos un valor en el rango [startCol .. startCol+numCols-1]. */
+function rangeRowHasAnyValue_(sheet, row, startCol, numCols) {
+  if (numCols <= 0 || row < 2) return false;
+  try {
+    var vals = getSheetRowValues_(sheet, row, startCol, numCols);
+    return rowHasAnyNonEmpty_(vals);
+  } catch (e) {
+    return false;
+  }
+}
+
+function pickField_(arr, i, key) {
+  if (!Array.isArray(arr) || i < 0 || i >= arr.length) return '';
+  var o = arr[i];
+  if (!o || typeof o !== 'object') return '';
+  return strCell_(o[key]);
+}
+
+/** Fila Thermo King índice i (alineada a la fila de hoja i del mismo ensayo). */
+function buildThermokingFlatRow(data, i) {
+  var fiTk = (data.fecha_inspeccion_thermoking != null && String(data.fecha_inspeccion_thermoking).trim() !== '') ? String(data.fecha_inspeccion_thermoking).trim() : '';
+  if (!fiTk && data.fecha_inspeccion != null && String(data.fecha_inspeccion).trim() !== '') fiTk = String(data.fecha_inspeccion).trim();
+  var respTk = (data.responsable_thermoking != null && String(data.responsable_thermoking).trim() !== '') ? String(data.responsable_thermoking).trim() : '';
+  if (!respTk && data.responsable != null && String(data.responsable).trim() !== '') respTk = String(data.responsable).trim();
+  var hora = (data.hora_salida_thermoking != null) ? String(data.hora_salida_thermoking).trim() : '';
+  var placa = (data.placa_thermoking != null) ? String(data.placa_thermoking).trim() : '';
+  var t = data.thermoking_tiempos || [];
+  var p = data.thermoking_peso || [];
+  var tem = data.thermoking_temp || [];
+  var h = data.thermoking_humedad_tk || data.thermoking_humedad || [];
+  var pr = data.thermoking_presion_tk || data.thermoking_presion || [];
+  var v = data.thermoking_vapor || [];
+  var obs = data.thermoking_obs || [];
+  return [
+    fiTk,
+    respTk,
+    hora,
+    placa,
+    pickField_(t, i, 'ic'),
+    pickField_(t, i, 'st'),
+    pickField_(t, i, 'it'),
+    pickField_(t, i, 'dp'),
+    pickField_(p, i, 'ic'),
+    pickField_(p, i, 'st'),
+    pickField_(p, i, 'it'),
+    pickField_(p, i, 'dp'),
+    pickField_(tem, i, 'ic_cm'),
+    pickField_(tem, i, 'ic_pu'),
+    pickField_(tem, i, 'st_cm'),
+    pickField_(tem, i, 'st_pu'),
+    pickField_(tem, i, 'it_amb'),
+    pickField_(tem, i, 'it_veh'),
+    pickField_(tem, i, 'it_pu'),
+    pickField_(tem, i, 'd_amb'),
+    pickField_(tem, i, 'd_veh'),
+    pickField_(tem, i, 'd_pu'),
+    pickField_(h, i, 'ic'),
+    pickField_(h, i, 'st'),
+    pickField_(h, i, 'aei'),
+    pickField_(h, i, 'ivi'),
+    pickField_(h, i, 'aed'),
+    pickField_(h, i, 'ivd'),
+    pickField_(pr, i, 'ic'),
+    pickField_(pr, i, 'st'),
+    pickField_(pr, i, 'aei'),
+    pickField_(pr, i, 'ivi'),
+    pickField_(pr, i, 'aed'),
+    pickField_(pr, i, 'ivd'),
+    pickField_(v, i, 'ic'),
+    pickField_(v, i, 'scm'),
+    pickField_(v, i, 'it'),
+    pickField_(v, i, 'st'),
+    pickField_(obs, i, 'observacion')
+  ];
+}
+
+/** Fila Recepción C5 índice i (packing1_c5 … packing8_c5). */
+function buildC5FlatRow(data, i) {
+  var hora = (data.hora_inicio_recepcion_c5 != null) ? String(data.hora_inicio_recepcion_c5).trim() : '';
+  var placa = (data.placa_c5 != null) ? String(data.placa_c5).trim() : '';
+  var p1 = data.packing1_c5 || data.c5_tiempos || [];
+  var p2 = data.packing2_c5 || data.c5_peso || [];
+  var p3 = data.packing3_c5 || data.c5_temp || [];
+  var p4 = data.packing4_c5 || data.c5_humedad || [];
+  var p5 = data.packing5_c5 || data.c5_presion || [];
+  var p6 = data.packing6_c5 || data.c5_presion_fruta || [];
+  var p8 = data.packing8_c5 || data.c5_obs || [];
+  return [
+    hora,
+    placa,
+    pickField_(p1, i, 'recepcion'),
+    pickField_(p1, i, 'ingreso_gasificado'),
+    pickField_(p1, i, 'salida_gasificado'),
+    pickField_(p1, i, 'ingreso_prefrio'),
+    pickField_(p1, i, 'salida_prefrio'),
+    pickField_(p2, i, 'peso_recepcion'),
+    pickField_(p2, i, 'peso_ingreso_gasificado'),
+    pickField_(p2, i, 'peso_salida_gasificado'),
+    pickField_(p2, i, 'peso_ingreso_prefrio'),
+    pickField_(p2, i, 'peso_salida_prefrio'),
+    pickField_(p3, i, 't_amb_recep'),
+    pickField_(p3, i, 't_pulp_recep'),
+    pickField_(p3, i, 't_amb_ing'),
+    pickField_(p3, i, 't_pulp_ing'),
+    pickField_(p3, i, 't_amb_sal'),
+    pickField_(p3, i, 't_pulp_sal'),
+    pickField_(p3, i, 't_amb_pre_in'),
+    pickField_(p3, i, 't_pulp_pre_in'),
+    pickField_(p3, i, 't_amb_pre_out'),
+    pickField_(p3, i, 't_pulp_pre_out'),
+    pickField_(p4, i, 'recepcion'),
+    pickField_(p4, i, 'ingreso_gasificado'),
+    pickField_(p4, i, 'salida_gasificado'),
+    pickField_(p4, i, 'ingreso_prefrio'),
+    pickField_(p4, i, 'salida_prefrio'),
+    pickField_(p5, i, 'recepcion'),
+    pickField_(p5, i, 'ingreso_gasificado'),
+    pickField_(p5, i, 'salida_gasificado'),
+    pickField_(p5, i, 'ingreso_prefrio'),
+    pickField_(p5, i, 'salida_prefrio'),
+    pickField_(p6, i, 'recepcion'),
+    pickField_(p6, i, 'ingreso_gasificado'),
+    pickField_(p6, i, 'salida_gasificado'),
+    pickField_(p6, i, 'ingreso_prefrio'),
+    pickField_(p6, i, 'salida_prefrio'),
+    pickField_(p8, i, 'observacion')
+  ];
+}
+
 function doPost(e) {
   if (!e || !e.postData || !e.postData.contents) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Sin datos POST" }))
@@ -30,6 +288,14 @@ function doPost(e) {
       var packingResult = doPostPacking(sheet, data);
       lock.releaseLock();
       return ContentService.createTextOutput(JSON.stringify(packingResult))
+        .setMimeType(ContentService.MimeType.JSON)
+        .setHeader('Access-Control-Allow-Origin', '*');
+    }
+    // POST Recepción C5: misma fila lógica fecha+ensayo, bloque C5 a la derecha de Thermo King.
+    if (data.mode === 'recepcion-c5' || data.mode === 'recepcion_c5') {
+      var c5Result = doPostRecepcionC5(sheet, data);
+      lock.releaseLock();
+      return ContentService.createTextOutput(JSON.stringify(c5Result))
         .setMimeType(ContentService.MimeType.JSON)
         .setHeader('Access-Control-Allow-Origin', '*');
     }
@@ -206,6 +472,16 @@ function doPost(e) {
   }
 }
 
+function safeJson(val) {
+  try {
+    if (val == null) return '';
+    if (typeof val === 'string') return val;
+    return JSON.stringify(val);
+  } catch (_) {
+    return '';
+  }
+}
+
 // Mantener solo los últimos ~500 UIDs para no llenar ScriptProperties
 function limpiarUidsAntiguos() {
   try {
@@ -280,11 +556,14 @@ function getPackingHeaderNames(numFilas) {
 }
 
 /**
- * POST Packing: recibe mode:'packing', fecha, ensayo_numero, fecha_inspeccion, responsable, hora_recepcion, n_viaje, packingRows.
- * Localiza filas para esa fecha+ensayo y escribe packing desde col 47 (Hoja 1). 4 cols fijas + 36 por fila = 40 cols.
+ * POST Packing: fecha, ensayo, packingRows, thermoking… Opcional: guardar_packing, guardar_thermoking (default true), actualizar_c5 (default true si no viene).
+ * Si packing ya está en hoja: merge — puede escribir Thermo King y/o C5 sin pisar cols 47–86.
  */
 function doPostPacking(sheet, data) {
   try {
+    var guardarPacking = (data.guardar_packing === false || data.guardar_packing === 'false') ? false : true;
+    var actualizarC5 = (data.actualizar_c5 === false || data.actualizar_c5 === 'false') ? false : true;
+
     var fecha = (data.fecha != null && data.fecha !== '') ? String(data.fecha).trim() : '';
     var ensayoNumero = (data.ensayo_numero != null && data.ensayo_numero !== '') ? String(data.ensayo_numero).trim() : '';
     var fechaInspeccion = (data.fecha_inspeccion != null && data.fecha_inspeccion !== '') ? String(data.fecha_inspeccion).trim() : '';
@@ -302,7 +581,6 @@ function doPostPacking(sheet, data) {
       return { ok: false, error: 'No hay datos en la hoja' };
     }
 
-    // Obtener TODAS las filas de la hoja que coinciden con fecha+ensayo (col M = índice 12)
     var dataRows = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
     var rowIndices = [];
     for (var k = 0; k < dataRows.length; k++) {
@@ -318,39 +596,125 @@ function doPostPacking(sheet, data) {
     }
 
     var primeraFila = rowIndices[0];
-    var celdaPacking = sheet.getRange(primeraFila, 47).getValue();
-    if (celdaPacking != null && String(celdaPacking).trim() !== '') {
-      return { ok: false, error: 'Ya existe información de packing para esta fecha y ensayo. No se puede sobrescribir.' };
+    var packingYaExiste = rangeRowHasAnyValue_(sheet, primeraFila, PACKING_START_COL, PACKING_COLS);
+    var guardarThermoking;
+    if (data.guardar_thermoking === false || data.guardar_thermoking === 'false') guardarThermoking = false;
+    else if (data.guardar_thermoking === true || data.guardar_thermoking === 'true') guardarThermoking = true;
+    else guardarThermoking = packingYaExiste ? false : true;
+
+    if (packingYaExiste) {
+      if (actualizarC5) {
+        var c5HeadersMerge = getC5FlatHeaders();
+        setSheetRowValues_(sheet, 1, C5_START_COL, c5HeadersMerge);
+        for (var cm = 0; cm < rowIndices.length; cm++) {
+          var c5Merge = buildC5FlatRow(data, cm);
+          setSheetRowValues_(sheet, rowIndices[cm], C5_START_COL, c5Merge);
+        }
+      }
+      if (guardarThermoking) {
+        var tkHeadersMerge = getThermokingFlatHeaders();
+        setSheetRowValues_(sheet, 1, THERMOKING_START_COL, tkHeadersMerge);
+        for (var tix = 0; tix < rowIndices.length; tix++) {
+          var termoMerge = buildThermokingFlatRow(data, tix);
+          setSheetRowValues_(sheet, rowIndices[tix], THERMOKING_START_COL, termoMerge);
+        }
+      }
+      if (!actualizarC5 && !guardarThermoking) {
+        return { ok: false, error: 'Nada que actualizar (packing ya en hoja; sin C5 ni Thermo King)' };
+      }
+      return {
+        ok: true,
+        message: 'Actualización en ' + rowIndices.length + ' fila(s) (packing existente; C5/Thermo según flags)',
+        filasEscritas: rowIndices.length,
+        mergeSoloC5: actualizarC5
+      };
     }
 
-    var startCol = 47; // Hoja 1: packing después de 46 cols de registro
-    var COLS_POR_FILA = 4 + 36; // FECHA_INSPECCION, RESPONSABLE, HORA_RECEPCION, N_VIAJE + 36 valores por fila
+    var startCol = PACKING_START_COL;
+    var COLS_POR_FILA = 4 + 36;
     var baseHeaders = ['FECHA_INSPECCION', 'RESPONSABLE', 'HORA_RECEPCION', 'N_VIAJE'].concat(getPackingHeaderNamesPerRow());
 
-    // Escribir cada packing row en la fila de hoja correspondiente (una fila de hoja por cada packing row)
-    for (var i = 0; i < packingRows.length && i < rowIndices.length; i++) {
-      var row = packingRows[i];
-      var filaHoja = rowIndices[i];
-      var valores = [fechaInspeccion, responsable, horaRecepcion, nViaje];
-      if (Array.isArray(row)) {
-        for (var j = 0; j < 36; j++) {
-          valores.push((j < row.length && row[j] != null && row[j] !== '') ? row[j] : '');
+    if (guardarPacking) {
+      for (var i = 0; i < packingRows.length && i < rowIndices.length; i++) {
+        var row = packingRows[i];
+        var filaHoja = rowIndices[i];
+        var valores = [fechaInspeccion, responsable, horaRecepcion, nViaje];
+        if (Array.isArray(row)) {
+          for (var j = 0; j < 36; j++) {
+            valores.push((j < row.length && row[j] != null && row[j] !== '') ? row[j] : '');
+          }
+        } else {
+          for (var j = 0; j < 36; j++) valores.push('');
         }
-      } else {
-        for (var j = 0; j < 36; j++) valores.push('');
+        setSheetRowValues_(sheet, filaHoja, startCol, valores);
       }
-      sheet.getRange(filaHoja, startCol, 1, COLS_POR_FILA).setValues([valores]);
+      setSheetRowValues_(sheet, 1, startCol, baseHeaders);
     }
 
-    // Encabezados en fila 1 (una sola vez; 40 columnas)
-    sheet.getRange(1, startCol, 1, baseHeaders.length).setValues([baseHeaders]);
+    if (guardarThermoking) {
+      var tkHeaders = getThermokingFlatHeaders();
+      setSheetRowValues_(sheet, 1, THERMOKING_START_COL, tkHeaders);
+      for (var ti = 0; ti < rowIndices.length; ti++) {
+        var termoVals = buildThermokingFlatRow(data, ti);
+        setSheetRowValues_(sheet, rowIndices[ti], THERMOKING_START_COL, termoVals);
+      }
+    }
+
+    if (actualizarC5) {
+      var c5Headers = getC5FlatHeaders();
+      setSheetRowValues_(sheet, 1, C5_START_COL, c5Headers);
+      for (var ci = 0; ci < rowIndices.length; ci++) {
+        var c5ValsPacking = buildC5FlatRow(data, ci);
+        setSheetRowValues_(sheet, rowIndices[ci], C5_START_COL, c5ValsPacking);
+      }
+    }
+
+    if (!guardarPacking && !guardarThermoking && !actualizarC5) {
+      return { ok: false, error: 'Nada que escribir (guardar_packing, guardar_thermoking y actualizar_c5 en false)' };
+    }
 
     return {
       ok: true,
-      message: 'Packing guardado en ' + Math.min(packingRows.length, rowIndices.length) + ' fila(s)',
-      filasEscritas: Math.min(packingRows.length, rowIndices.length),
+      message: 'Guardado en ' + rowIndices.length + ' fila(s) (Packing/Thermo/C5 según flags)',
+      filasEscritas: rowIndices.length,
       packingMuestras: packingRows.length
     };
+  } catch (err) {
+    return { ok: false, error: err.toString() };
+  }
+}
+
+/**
+ * POST Recepción C5: marca/guarda C5 por fecha+ensayo (misma fila lógica).
+ * Bloque C5: columnas planas desde C5_START_COL (después de Thermo King).
+ */
+function doPostRecepcionC5(sheet, data) {
+  try {
+    var fecha = (data.fecha != null && data.fecha !== '') ? String(data.fecha).trim() : '';
+    var ensayoNumero = (data.ensayo_numero != null && data.ensayo_numero !== '') ? String(data.ensayo_numero).trim() : '';
+    if (!fecha || !ensayoNumero) return { ok: false, error: 'Faltan fecha o ensayo_numero' };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { ok: false, error: 'No hay datos en la hoja' };
+
+    var dataRows = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    var rowIndices = [];
+    for (var k = 0; k < dataRows.length; k++) {
+      var r = dataRows[k];
+      var rowFechaStr = formatFechaPacking(r[0]);
+      var rowEn = (r[12] != null && r[12] !== '') ? String(r[12]).trim() : '';
+      if (rowFechaStr === fecha && rowEn === ensayoNumero) rowIndices.push(2 + k);
+    }
+    if (rowIndices.length === 0) return { ok: false, error: 'No se encontró ninguna fila para esa fecha y ensayo' };
+
+    var c5Headers = getC5FlatHeaders();
+    setSheetRowValues_(sheet, 1, C5_START_COL, c5Headers);
+
+    for (var ci = 0; ci < rowIndices.length; ci++) {
+      var c5Vals = buildC5FlatRow(data, ci);
+      setSheetRowValues_(sheet, rowIndices[ci], C5_START_COL, c5Vals);
+    }
+    return { ok: true, message: 'Recepción C5 guardada', fila: rowIndices[0], filasEscritas: rowIndices.length };
   } catch (err) {
     return { ok: false, error: err.toString() };
   }
@@ -463,26 +827,44 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    // 2) Listar ensayos para una fecha — devuelve números y si tienen packing (col 47)
+    // 2) Listar ensayos para una fecha — devuelve números y estado packing/C5.
     if (fecha && !ensayoNumero) {
-      var packingCol = (lastRow >= 2) ? sheet.getRange(2, 47, lastRow, 47).getValues() : [];
+      var c5NumColsLista = getC5FlatHeaders().length;
+      var packingBlock = (lastRow >= 2) ? sheet.getRange(2, PACKING_START_COL, lastRow, PACKING_COLS).getValues() : [];
+      var tkColsLista = getThermokingSheetColumnCount_();
+      var c5Block = (lastRow >= 2) ? sheet.getRange(2, C5_START_COL, lastRow, c5NumColsLista).getValues() : [];
       var ensayosInfo = {};
       for (var j = 0; j < data.length; j++) {
         var rowFechaStr = formatFecha(data[j][0]);
         if (rowFechaStr === fecha) {
           var en = String(data[j][12] || '').trim();
           if (en) {
-            if (!ensayosInfo[en]) ensayosInfo[en] = { tienePacking: false };
-            if (packingCol[j] && packingCol[j][0] != null && String(packingCol[j][0]).trim() !== '')
-              ensayosInfo[en].tienePacking = true;
+            if (!ensayosInfo[en]) ensayosInfo[en] = { tieneVisual: false, tienePacking: false, tieneRecepcionC5: false, tieneThermoKing: false, fundo: '' };
+            /* Fila principal en hoja para esa fecha+ensayo = registro calibrado (Visual); no depender de subrango de columnas. */
+            ensayosInfo[en].tieneVisual = true;
+            var fundoNorm = String(data[j][10] || '').trim().toUpperCase();
+            if (fundoNorm) ensayosInfo[en].fundo = fundoNorm;
+            if (packingBlock[j] && rowHasAnyNonEmpty_(packingBlock[j])) ensayosInfo[en].tienePacking = true;
+            if (c5Block[j] && rowHasAnyNonEmpty_(c5Block[j])) ensayosInfo[en].tieneRecepcionC5 = true;
+            /* Misma fila física que data[j]: leer TK con ancho exacto del bloque (evita columnas fantasmas por desfase 37/39). */
+            var filaSheetLista = j + 2;
+            if (rangeRowHasAnyValue_(sheet, filaSheetLista, THERMOKING_START_COL, tkColsLista)) ensayosInfo[en].tieneThermoKing = true;
           }
         }
       }
       var ensayosList = Object.keys(ensayosInfo).sort();
       result.ok = true;
       result.ensayos = ensayosList;
+      result.ensayosConVisual = {};
       result.ensayosConPacking = {};
+      result.ensayosConC5 = {};
+      result.ensayosConThermoKing = {};
+      result.fundoPorEnsayo = {};
+      ensayosList.forEach(function (e) { result.ensayosConVisual[e] = ensayosInfo[e].tieneVisual; });
       ensayosList.forEach(function (e) { result.ensayosConPacking[e] = ensayosInfo[e].tienePacking; });
+      ensayosList.forEach(function (e) { result.ensayosConC5[e] = ensayosInfo[e].tieneRecepcionC5; });
+      ensayosList.forEach(function (e) { result.ensayosConThermoKing[e] = ensayosInfo[e].tieneThermoKing; });
+      ensayosList.forEach(function (e) { result.fundoPorEnsayo[e] = ensayosInfo[e].fundo || ''; });
       return returnOutput(result);
     }
 
@@ -525,6 +907,10 @@ function doGet(e) {
     var filaEnSheet = null;
     var numFilas = 0;
     var despachoPorFila = [];
+    var tienePacking = false;
+    var tieneRecepcionC5 = false;
+    var tieneThermoKing = false;
+    var c5NumColsDetalle = getC5FlatHeaders().length;
     for (var k = 0; k < data.length; k++) {
       var r = data[k];
       var rowFechaStr = formatFecha(r[0]);
@@ -542,6 +928,10 @@ function doGet(e) {
         var desp = r[19];
         var numDesp = (desp !== null && desp !== undefined && String(desp).trim() !== '') ? parseFloat(String(desp).replace(',', '.')) : NaN;
         despachoPorFila.push(!isNaN(numDesp) ? numDesp : null);
+        var filaSheetK = 2 + k;
+        if (rangeRowHasAnyValue_(sheet, filaSheetK, PACKING_START_COL, PACKING_COLS)) tienePacking = true;
+        if (rangeRowHasAnyValue_(sheet, filaSheetK, C5_START_COL, c5NumColsDetalle)) tieneRecepcionC5 = true;
+        if (rangeRowHasAnyValue_(sheet, filaSheetK, THERMOKING_START_COL, getThermokingSheetColumnCount_())) tieneThermoKing = true;
       }
     }
 
@@ -550,17 +940,13 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    var tienePacking = false;
-    try {
-      var packingVal = sheet.getRange(filaEnSheet, 47).getValue();
-      tienePacking = (packingVal != null && String(packingVal).trim() !== '');
-    } catch (_) {}
-
     result.ok = true;
     result.data = {
       fila: filaEnSheet,
       numFilas: numFilas,
       tienePacking: tienePacking,
+      tieneRecepcionC5: tieneRecepcionC5,
+      tieneThermoKing: tieneThermoKing,
       despachoPorFila: despachoPorFila,
       ENSAYO_NUMERO: row[12],
       TRAZ_ETAPA: row[7],
@@ -568,6 +954,7 @@ function doGet(e) {
       TRAZ_LIBRE: row[9],
       VARIEDAD: row[3],
       PLACA_VEHICULO: row[4],
+      FUNDO: row[10],
       GUIA_REMISION: row[2]
     };
     return returnOutput(result);

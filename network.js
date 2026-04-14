@@ -6,10 +6,93 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwdC1lwuGNT01xfLE_0jI31
 /** Máximo de ítems ya procesados (subido/rechazado) a conservar; los más antiguos se borran. Los pendientes siempre se conservan. */
 const MAX_REGISTRO_HISTORIAL = 80;
 const MAX_PACKING_HISTORIAL = 50;
+const LATENCIA_PING_INTERVAL_MS = 10000;
+const LATENCIA_PING_TIMEOUT_MS = 4500;
+const LATENCIA_UMBRAL_VERDE_MS = 700;
+const LATENCIA_UMBRAL_AMARILLO_MS = 1600;
 
 let isSyncing = false;
 let isSyncingPacking = false;
 let retryTimeoutId = null;
+let latencyTimerId = null;
+let latencyPollInFlight = false;
+let lastLatencyState = { level: 'unknown', text: 'Nivel de internet: --', latencyMs: null, online: typeof navigator !== 'undefined' ? navigator.onLine : true };
+
+function publishLatencyState(state) {
+    lastLatencyState = state;
+    try { window.__tiemposNetQuality = state; } catch (_) {}
+    try { window.dispatchEvent(new CustomEvent('tiemposNetQualityUpdated', { detail: state })); } catch (_) {}
+}
+
+function aplicarUiLatencia(state) {
+    const el = document.getElementById('latency-live');
+    const textEl = document.getElementById('latency-live-text');
+    if (!el || !textEl) {
+        publishLatencyState(state);
+        return;
+    }
+    el.classList.remove('latency-good', 'latency-warn', 'latency-bad', 'latency-unknown');
+    if (state.level === 'good') el.classList.add('latency-good');
+    else if (state.level === 'warn') el.classList.add('latency-warn');
+    else if (state.level === 'bad') el.classList.add('latency-bad');
+    else el.classList.add('latency-unknown');
+    textEl.textContent = state.text;
+    if (state.level === 'bad') el.title = 'Red inestable o lenta. No es recomendable enviar.';
+    else if (state.level === 'warn') el.title = 'Red intermedia. Puedes enviar, pero puede tardar.';
+    else if (state.level === 'good') el.title = 'Red estable para enviar.';
+    else el.title = 'Midiendo latencia...';
+    publishLatencyState(state);
+}
+
+async function medirLatenciaUnaVez() {
+    if (latencyPollInFlight) return;
+    latencyPollInFlight = true;
+    try {
+        if (!navigator.onLine) {
+            aplicarUiLatencia({ level: 'bad', text: 'Nivel de internet: Sin conexión', latencyMs: null, online: false });
+            return;
+        }
+        const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        let timeoutId = null;
+        if (controller) {
+            timeoutId = setTimeout(() => {
+                try { controller.abort(); } catch (_) {}
+            }, LATENCIA_PING_TIMEOUT_MS);
+        }
+        try {
+            await fetch(API_URL + '?ping=1&t=' + Date.now(), {
+                method: 'GET',
+                mode: 'no-cors',
+                cache: 'no-store',
+                signal: controller ? controller.signal : undefined
+            });
+            const end = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+            const ms = Math.max(0, Math.round(end - start));
+            if (ms <= LATENCIA_UMBRAL_VERDE_MS) {
+                aplicarUiLatencia({ level: 'good', text: 'Nivel de internet: Bueno', latencyMs: ms, online: true });
+            } else if (ms <= LATENCIA_UMBRAL_AMARILLO_MS) {
+                aplicarUiLatencia({ level: 'warn', text: 'Nivel de internet: Intermedio', latencyMs: ms, online: true });
+            } else {
+                // Online pero lenta: amarillo (rojo solo offline real).
+                aplicarUiLatencia({ level: 'warn', text: 'Nivel de internet: Intermedio', latencyMs: ms, online: true });
+            }
+        } catch (_) {
+            // Puede fallar un ping puntual aun con internet; mantener amarillo.
+            aplicarUiLatencia({ level: 'warn', text: 'Nivel de internet: Intermedio', latencyMs: null, online: true });
+        } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+        }
+    } finally {
+        latencyPollInFlight = false;
+    }
+}
+
+function ensureLatencyMonitor() {
+    if (latencyTimerId) return;
+    medirLatenciaUnaVez();
+    latencyTimerId = setInterval(medirLatenciaUnaVez, LATENCIA_PING_INTERVAL_MS);
+}
 
 /** Recorta la cola de registro: mantiene todos los pendientes y solo los últimos MAX_REGISTRO_HISTORIAL ya procesados (subido/rechazado). */
 function trimRegistroQueue() {
@@ -91,6 +174,16 @@ async function verificarPackingSubido(fecha, ensayoNumero) {
     }
 }
 
+async function verificarRecepcionC5Subido(fecha, ensayoNumero) {
+    if (!fecha || ensayoNumero == null || ensayoNumero === '') return false;
+    try {
+        const res = await getDatosPacking(String(fecha).trim(), String(ensayoNumero), true);
+        return res.ok === true && res.data && res.data.tieneRecepcionC5 === true;
+    } catch (_) {
+        return false;
+    }
+}
+
 /** Envía los Packing pendientes cuando hay conexión. Tras POST, verifica con GET (tienePacking) antes de marcar subido; si falla no hace break. */
 async function syncPackingQueue() {
     if (isSyncingPacking || !navigator.onLine) return;
@@ -101,15 +194,24 @@ async function syncPackingQueue() {
     for (let i = 0; i < queue.length; i++) {
         const item = queue[i];
         try {
-            await postPacking(item.payload);
-            const verificado = await verificarPackingSubido(item.payload.fecha, item.payload.ensayo_numero);
-            if (!verificado) continue;
+            const soloC5 = item.payload && item.payload.mode === 'recepcion-c5';
+            if (soloC5) {
+                const pl = Object.assign({}, item.payload);
+                delete pl.mode;
+                await postRecepcionC5(pl);
+                const verificado = await verificarRecepcionC5Subido(item.payload.fecha, item.payload.ensayo_numero);
+                if (!verificado) continue;
+            } else {
+                await postPacking(item.payload);
+                const verificado = await verificarPackingSubido(item.payload.fecha, item.payload.ensayo_numero);
+                if (!verificado) continue;
+            }
             const updated = getPackingQueue().map(it =>
                 it.uid === item.uid ? { ...it, status: 'subido', subidoAt: new Date().toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) } : it
             );
             setPackingQueue(updated);
             updateUI();
-            await new Promise(r => setTimeout(r, 800));
+            await new Promise(r => setTimeout(r, 250));
         } catch (_) {
             // No break: seguir con el siguiente ítem
         }
@@ -151,6 +253,8 @@ export function updateUI() {
     try {
         window.dispatchEvent(new CustomEvent('tiemposStorageUpdated'));
     } catch (e) {}
+    ensureLatencyMonitor();
+    medirLatenciaUnaVez();
 }
 
 // Si hay pendientes (registro o packing) y estamos online, reintentar en 12 s por si la conexión falló
@@ -222,32 +326,66 @@ async function sendToCloud(d) {
 
 /** POST Packing: envía mode 'packing'. Con no-cors no se puede leer la respuesta; el backend escribe en la primera hoja. */
 export async function postPacking(payload) {
+    if (!navigator.onLine) {
+        throw new Error('Sin conexión');
+    }
+    var p = Object.assign({}, payload);
+    delete p.mode;
     await fetch(API_URL, {
         method: "POST",
         mode: "no-cors",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "packing", ...payload })
+        body: JSON.stringify({ mode: "packing", ...p })
+    });
+}
+
+/** POST solo Recepción C5 (misma fila fecha+ensayo; no requiere bloque Packing en hoja). Apps Script: mode recepcion-c5 */
+export async function postRecepcionC5(payload) {
+    if (!navigator.onLine) {
+        throw new Error('Sin conexión');
+    }
+    var p = Object.assign({}, payload);
+    delete p.mode;
+    await fetch(API_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "recepcion-c5", ...p })
     });
 }
 
 // Mensaje estándar cuando un registro no se sube por duplicado
 const RECHAZO_DUPLICADO_MSG = "No se subió porque ya estaba registrado este ensayo para esta fecha.";
 
-/** Verifica con GET que cada fila (fecha+ensayo) exista en el servidor. Solo marcar "subido" cuando sea true (evita marcar subido si el POST falló por no-cors). */
+/** Clave única fecha+ensayo (varias filas del mismo ensayo = un solo GET). */
+function claveFechaEnsayoRow(row) {
+    const fecha = row[0];
+    const ensayoNum = row[12];
+    if (fecha == null || String(fecha).trim() === '') return null;
+    return String(fecha).trim() + '\u0001' + String(ensayoNum);
+}
+
+/** Verifica con GET que cada combinación (fecha+ensayo) distinta exista en el servidor. Varias filas del mismo ensayo → una sola petición. */
 async function verificarRegistroSubido(rows) {
     if (!rows || rows.length === 0) return true;
-    const checks = await Promise.all(rows.map(async (row) => {
-        const fecha = row[0];
-        const ensayoNum = row[12];
-        if (fecha == null || String(fecha).trim() === '') return true;
+    const keys = [...new Set(rows.map(claveFechaEnsayoRow).filter(Boolean))];
+    const porClave = new Map();
+    await Promise.all(keys.map(async (key) => {
+        const i = key.indexOf('\u0001');
+        const fecha = key.slice(0, i);
+        const ensayoNum = key.slice(i + 1);
         try {
-            const { existe } = await existeRegistroFechaEnsayo(String(fecha).trim(), ensayoNum);
-            return existe === true;
+            const { existe } = await existeRegistroFechaEnsayo(fecha, ensayoNum);
+            porClave.set(key, existe === true);
         } catch (_) {
-            return false;
+            porClave.set(key, false);
         }
     }));
-    return checks.every(Boolean);
+    return rows.every((row) => {
+        const k = claveFechaEnsayoRow(row);
+        if (!k) return true;
+        return porClave.get(k) === true;
+    });
 }
 
 // Sincronización: un registro a la vez. Antes de enviar comprueba por fila si ya existe; después de enviar verifica con GET antes de marcar "subido".
@@ -268,6 +406,7 @@ async function sync() {
 
         const rowsToSend = [];
         const rowsRejected = [];
+        const cacheExiste = new Map();
         for (const row of rows) {
             const fecha = row[0];
             const ensayoNum = row[12];
@@ -275,8 +414,15 @@ async function sync() {
                 rowsToSend.push(row);
                 continue;
             }
+            const key = String(fecha).trim() + '\u0001' + String(ensayoNum);
             try {
-                const { existe } = await existeRegistroFechaEnsayo(String(fecha).trim(), ensayoNum);
+                let existe;
+                if (cacheExiste.has(key)) existe = cacheExiste.get(key);
+                else {
+                    const res = await existeRegistroFechaEnsayo(String(fecha).trim(), ensayoNum);
+                    existe = res.existe === true;
+                    cacheExiste.set(key, existe);
+                }
                 if (existe) rowsRejected.push(row);
                 else rowsToSend.push(row);
             } catch (_) {
@@ -301,7 +447,7 @@ async function sync() {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(currentItems));
                 trimRegistroQueue();
                 updateUI();
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 250));
                 continue;
             }
 
@@ -325,7 +471,7 @@ async function sync() {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(currentItems));
                 trimRegistroQueue();
                 updateUI();
-                await new Promise(r => setTimeout(r, 2500));
+                await new Promise(r => setTimeout(r, 500));
                 continue;
             }
 
@@ -340,7 +486,7 @@ async function sync() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(currentItems));
             trimRegistroQueue();
             updateUI();
-            await new Promise(r => setTimeout(r, 2500));
+            await new Promise(r => setTimeout(r, 500));
         } catch (_e) {
             // No break: seguir con el siguiente ítem para no bloquear la cola
         }
@@ -350,20 +496,68 @@ async function sync() {
 }
 
 const MSJ_SIN_CONEXION = "Sin conexión. Conéctate para cargar datos.";
+/** GET JSONP: el servidor no respondió a tiempo (no implica falta de internet). */
+const MSJ_JSONP_TIMEOUT = "El servidor tardó en responder. Intenta de nuevo en unos segundos.";
 const PACKING_CACHE_KEY = "tiempos_packing_cache_v1";
 const LISTADO_REGISTRADOS_KEY = "tiempos_listado_registrados_v1";
 const LISTADO_REGISTRADOS_TTL_MS = 2 * 60 * 1000; // 2 min
-/** Máximo de entradas (fecha_ensayo) en caché GET para no llenar localStorage y mantener la app ligera. */
-const MAX_DATOS_BY_FECHA_ENSAYO = 40;
+/**
+ * Máximo de combinaciones fecha+ensayo con datos completos de packing en caché (localStorage).
+ * Si no hay entrada para esa clave → getDatosPacking pide al servidor (no inventa datos).
+ * Al superar este número, se va borrando la más antigua (LRU) y entrando la nueva.
+ */
+const MAX_RECENT_BUSQUEDAS_PACKING = 40;
+
+/**
+ * Marca una clave como la más reciente y elimina la más antigua si hay más de MAX_RECENT_BUSQUEDAS_PACKING.
+ * @param {object} cache Objeto caché mutado in-place (debe incluir datosByFechaEnsayo y recentSearchKeys).
+ */
+function touchRecentSearchInMemory(cache, key) {
+    if (!key) return;
+    if (!cache.recentSearchKeys) cache.recentSearchKeys = [];
+    if (!cache.datosByFechaEnsayo) cache.datosByFechaEnsayo = {};
+    var arr = cache.recentSearchKeys;
+    var i = arr.indexOf(key);
+    if (i >= 0) arr.splice(i, 1);
+    arr.unshift(key);
+    while (arr.length > MAX_RECENT_BUSQUEDAS_PACKING) {
+        var ev = arr.pop();
+        if (ev && cache.datosByFechaEnsayo[ev]) {
+            delete cache.datosByFechaEnsayo[ev];
+            console.log('[cache packing] LRU: se eliminó búsqueda antigua (límite ' + MAX_RECENT_BUSQUEDAS_PACKING + '):', ev);
+        }
+    }
+}
 
 export function getPackingCache() {
     try {
         const raw = localStorage.getItem(PACKING_CACHE_KEY);
         const base = raw ? JSON.parse(raw) : { fechas: [], ensayosByFecha: {}, lastRow: null };
         if (!base.datosByFechaEnsayo) base.datosByFechaEnsayo = {};
+        if (!Array.isArray(base.recentSearchKeys)) base.recentSearchKeys = [];
+        // Migración: cachés sin LRU o con demasiadas claves (orden de inserción en objeto = aprox. antigüedad)
+        var dk = Object.keys(base.datosByFechaEnsayo);
+        var migrated = false;
+        if (dk.length > MAX_RECENT_BUSQUEDAS_PACKING) {
+            var drop = dk.slice(0, dk.length - MAX_RECENT_BUSQUEDAS_PACKING);
+            drop.forEach(function (k) {
+                delete base.datosByFechaEnsayo[k];
+            });
+            base.recentSearchKeys = dk.slice(-MAX_RECENT_BUSQUEDAS_PACKING);
+            migrated = true;
+            console.log('[cache packing] Migración: recortado a ' + MAX_RECENT_BUSQUEDAS_PACKING + ' búsquedas recientes.');
+        } else if (base.recentSearchKeys.length === 0 && dk.length > 0) {
+            base.recentSearchKeys = dk.slice();
+            migrated = true;
+        }
+        if (migrated) {
+            try {
+                localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(base));
+            } catch (_) {}
+        }
         return base;
     } catch (_) {
-        return { fechas: [], ensayosByFecha: {}, lastRow: null, datosByFechaEnsayo: {} };
+        return { fechas: [], ensayosByFecha: {}, lastRow: null, datosByFechaEnsayo: {}, recentSearchKeys: [] };
     }
 }
 
@@ -375,10 +569,9 @@ function setPackingCache(partial) {
         if (partial.lastRow != null) cache.lastRow = partial.lastRow;
         if (partial.datosByFechaEnsayo != null) {
             cache.datosByFechaEnsayo = { ...cache.datosByFechaEnsayo, ...partial.datosByFechaEnsayo };
-            var keys = Object.keys(cache.datosByFechaEnsayo);
-            if (keys.length > MAX_DATOS_BY_FECHA_ENSAYO) {
-                keys.slice(0, keys.length - MAX_DATOS_BY_FECHA_ENSAYO).forEach(function (k) { delete cache.datosByFechaEnsayo[k]; });
-            }
+            Object.keys(partial.datosByFechaEnsayo).forEach(function (k) {
+                touchRecentSearchInMemory(cache, k);
+            });
         }
         localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(cache));
     } catch (e) {
@@ -386,43 +579,80 @@ function setPackingCache(partial) {
             try {
                 var c = getPackingCache();
                 c.datosByFechaEnsayo = {};
+                c.recentSearchKeys = [];
                 localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(c));
             } catch (_) {}
         }
     }
 }
 
+/** Contador para nombres JSONP únicos (varios GET en el mismo ms pisan window[callback] si solo usan Date.now()). */
+let jsonpCallbackSeq = 0;
+
+/**
+ * Tiempo máx. de espera JSONP (GET a Apps Script).
+ * - Menos de ~10 s suele cortar respuestas válidas y antes borrábamos el callback → ReferenceError en consola.
+ * - Tras timeout se deja un stub en window[callback] (respuesta tardía no rompe la página).
+ * - 28 s: equilibrio entre cold start del script y no dejar al usuario esperando un minuto.
+ */
+const JSONP_GET_TIMEOUT_MS = 28000;
+
 /** GET vía JSONP (evita CORS: carga con <script>, misma URL que POST). */
 function fetchGetJsonp(url) {
     return new Promise((resolve, reject) => {
-        const name = '__tiemposPacking_' + Date.now();
+        const name = 'tiemposJsonp_' + Date.now() + '_' + (++jsonpCallbackSeq) + '_' + Math.random().toString(36).slice(2, 10);
         const sep = url.indexOf('?') >= 0 ? '&' : '?';
         const scriptUrl = url + sep + 'callback=' + encodeURIComponent(name);
 
         console.log('[GET Enviando] URL completa:', scriptUrl);
         console.log('[GET Enviando] Parámetros en la URL:', url.replace(API_URL, '').replace(/^\?/, '') || '(ninguno, pide fechas)');
 
-        const cleanup = () => {
+        let settled = false;
+        let timerId = null;
+        const script = document.createElement('script');
+
+        const removeScript = () => {
             try { if (script.parentNode) script.remove(); } catch (_) {}
+        };
+
+        /** Tras timeout/error: no borrar window[name] (el <script> puede ejecutarse después y llamar al callback). Dejar no-op evita ReferenceError. */
+        const stubCallbackIfNeeded = () => {
+            try {
+                window[name] = function () {
+                    try { delete window[name]; } catch (_) {}
+                };
+            } catch (_) {}
+        };
+
+        const cleanupSuccess = () => {
+            if (timerId != null) clearTimeout(timerId);
+            removeScript();
             try { delete window[name]; } catch (_) {}
-            if (timer) clearTimeout(timer);
         };
 
         window[name] = (data) => {
-            cleanup();
+            if (settled) return;
+            settled = true;
+            cleanupSuccess();
             console.log('[GET Respuesta recibida]', data);
             resolve(data || { ok: false, error: "Respuesta inválida" });
         };
 
-        const timer = setTimeout(() => {
-            cleanup();
-            console.warn('[GET Timeout] No hubo respuesta en 10 s.');
-            reject(new Error(MSJ_SIN_CONEXION));
-        }, 10000);
+        timerId = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            removeScript();
+            stubCallbackIfNeeded();
+            console.warn('[GET Timeout] No hubo respuesta en ' + JSONP_GET_TIMEOUT_MS / 1000 + ' s.');
+            reject(new Error(MSJ_JSONP_TIMEOUT));
+        }, JSONP_GET_TIMEOUT_MS);
 
-        const script = document.createElement('script');
         script.onerror = () => {
-            cleanup();
+            if (settled) return;
+            settled = true;
+            removeScript();
+            if (timerId != null) clearTimeout(timerId);
+            stubCallbackIfNeeded();
             console.warn('[GET Error] Falló la carga del script (bloqueado o sin red).');
             reject(new Error(MSJ_SIN_CONEXION));
         };
@@ -465,42 +695,106 @@ export async function getFechasConDatos() {
     }
 }
 
+/** Una sola petición JSONP a la vez por fecha (evita doble timeout si se dispara change dos veces o UI rápida). */
+const ensayosPorFechaInflight = new Map();
+
 /** GET: lista de ensayos para una fecha. Con internet intenta servidor y guarda en caché; sin internet devuelve caché al instante. */
 export async function getEnsayosPorFecha(fecha) {
+    const f = (fecha || '').trim();
+    if (!f) return { ok: false, ensayos: [], error: 'Fecha requerida.' };
     if (!navigator.onLine) {
         const cache = getPackingCache();
-        const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
-        if (cached && cached.length > 0)
+        const cached = cache.ensayosByFecha && cache.ensayosByFecha[f];
+        if (Array.isArray(cached) && cached.length > 0)
             return { ok: true, ensayos: cached, fromCache: true };
+        if (cached && Array.isArray(cached.ensayos) && cached.ensayos.length > 0)
+            return {
+                ok: true,
+                ensayos: cached.ensayos,
+                ensayosConVisual: cached.ensayosConVisual || {},
+                ensayosConPacking: cached.ensayosConPacking || {},
+                ensayosConC5: cached.ensayosConC5 || {},
+                ensayosConThermoKing: cached.ensayosConThermoKing || {},
+                fundoPorEnsayo: cached.fundoPorEnsayo || {},
+                fromCache: true
+            };
         return { ok: false, ensayos: [], error: MSJ_SIN_CONEXION };
     }
-    console.log('[getEnsayosPorFecha] Enviando: fecha=' + fecha + ' → el servidor debe devolver { ok: true, ensayos: ["Ensayo 1", "Ensayo 2", ...] }');
-    try {
-        const url = API_URL + "?fecha=" + encodeURIComponent(fecha);
-        const out = await fetchGetJsonp(url);
-        if (out.ok && Array.isArray(out.ensayos)) {
-            console.log('[getEnsayosPorFecha] OK. Ensayos recibidos:', out.ensayos);
-            setPackingCache({ ensayosByFecha: { [fecha]: out.ensayos } });
-            return out;
-        }
-        const cache = getPackingCache();
-        const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
-        if (cached && cached.length > 0) {
-            console.log('[getEnsayosPorFecha] Usando caché. Ensayos:', cached);
-            return { ok: true, ensayos: cached, fromCache: true };
-        }
-        console.warn('[getEnsayosPorFecha] Sin datos. Error:', out.error);
-        return { ok: false, ensayos: [], error: out.error || "No se pudieron cargar los ensayos." };
-    } catch (e) {
-        const cache = getPackingCache();
-        const cached = cache.ensayosByFecha && cache.ensayosByFecha[fecha];
-        if (cached && cached.length > 0) {
-            console.log('[getEnsayosPorFecha] Falló la petición, usando caché.');
-            return { ok: true, ensayos: cached, fromCache: true };
-        }
-        console.warn('[getEnsayosPorFecha] Error:', e && e.message);
-        return { ok: false, ensayos: [], error: e && e.message ? e.message : MSJ_SIN_CONEXION };
+    if (ensayosPorFechaInflight.has(f)) {
+        console.log('[getEnsayosPorFecha] Reutilizando petición en curso para fecha=' + f);
+        return ensayosPorFechaInflight.get(f);
     }
+    const promise = (async () => {
+        console.log('[getEnsayosPorFecha] Enviando: fecha=' + f + ' → el servidor debe devolver { ok: true, ensayos: ["Ensayo 1", "Ensayo 2", ...] }');
+        try {
+            const url = API_URL + "?fecha=" + encodeURIComponent(f);
+            const out = await fetchGetJsonp(url);
+            if (out.ok && Array.isArray(out.ensayos)) {
+                console.log('[getEnsayosPorFecha] OK. Ensayos recibidos:', out.ensayos);
+                setPackingCache({
+                    ensayosByFecha: {
+                        [f]: {
+                            ensayos: out.ensayos,
+                            ensayosConVisual: out.ensayosConVisual || {},
+                            ensayosConPacking: out.ensayosConPacking || {},
+                            ensayosConC5: out.ensayosConC5 || {},
+                            ensayosConThermoKing: out.ensayosConThermoKing || {},
+                            fundoPorEnsayo: out.fundoPorEnsayo || {}
+                        }
+                    }
+                });
+                return out;
+            }
+            const cache = getPackingCache();
+            const cached = cache.ensayosByFecha && cache.ensayosByFecha[f];
+            if (Array.isArray(cached) && cached.length > 0) {
+                console.log('[getEnsayosPorFecha] Usando caché. Ensayos:', cached);
+                return { ok: true, ensayos: cached, fromCache: true };
+            }
+            if (cached && Array.isArray(cached.ensayos) && cached.ensayos.length > 0) {
+                console.log('[getEnsayosPorFecha] Usando caché. Ensayos:', cached.ensayos);
+                return {
+                    ok: true,
+                    ensayos: cached.ensayos,
+                    ensayosConVisual: cached.ensayosConVisual || {},
+                    ensayosConPacking: cached.ensayosConPacking || {},
+                    ensayosConC5: cached.ensayosConC5 || {},
+                    ensayosConThermoKing: cached.ensayosConThermoKing || {},
+                    fundoPorEnsayo: cached.fundoPorEnsayo || {},
+                    fromCache: true
+                };
+            }
+            console.warn('[getEnsayosPorFecha] Sin datos. Error:', out.error);
+            return { ok: false, ensayos: [], error: out.error || "No se pudieron cargar los ensayos." };
+        } catch (e) {
+            const cache = getPackingCache();
+            const cached = cache.ensayosByFecha && cache.ensayosByFecha[f];
+            if (Array.isArray(cached) && cached.length > 0) {
+                console.log('[getEnsayosPorFecha] Falló la petición, usando caché.');
+                return { ok: true, ensayos: cached, fromCache: true };
+            }
+            if (cached && Array.isArray(cached.ensayos) && cached.ensayos.length > 0) {
+                console.log('[getEnsayosPorFecha] Falló la petición, usando caché.');
+                return {
+                    ok: true,
+                    ensayos: cached.ensayos,
+                    ensayosConVisual: cached.ensayosConVisual || {},
+                    ensayosConPacking: cached.ensayosConPacking || {},
+                    ensayosConC5: cached.ensayosConC5 || {},
+                    ensayosConThermoKing: cached.ensayosConThermoKing || {},
+                    fundoPorEnsayo: cached.fundoPorEnsayo || {},
+                    fromCache: true
+                };
+            }
+            console.warn('[getEnsayosPorFecha] Error:', e && e.message);
+            return { ok: false, ensayos: [], error: e && e.message ? e.message : MSJ_SIN_CONEXION };
+        }
+    })();
+    ensayosPorFechaInflight.set(f, promise);
+    promise.finally(() => {
+        ensayosPorFechaInflight.delete(f);
+    });
+    return promise;
 }
 
 /** Rellena la caché de GET (fechas, listado registrados) cuando hay internet. Llamar al cargar la app para tener datos locales al ir offline. */
@@ -580,10 +874,22 @@ export async function getDatosPacking(fecha, ensayoNumero, skipCache) {
     const key = keyFechaEnsayo(fecha, ensayoNumero);
     const cache = getPackingCache();
     if (!skipCache && cache.datosByFechaEnsayo && cache.datosByFechaEnsayo[key]) {
+        touchRecentSearchInMemory(cache, key);
+        try {
+            localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(cache));
+        } catch (_) {}
         console.log('[getDatosPacking] Caché hit para', key, '(numFilas=', cache.datosByFechaEnsayo[key].numFilas + ')');
         return { ok: true, data: cache.datosByFechaEnsayo[key], fromCache: true };
     }
     if (!navigator.onLine) {
+        if (cache.datosByFechaEnsayo && cache.datosByFechaEnsayo[key]) {
+            touchRecentSearchInMemory(cache, key);
+            try {
+                localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(cache));
+            } catch (_) {}
+            console.log('[getDatosPacking] Sin internet: usando caché de búsqueda reciente para', key);
+            return { ok: true, data: cache.datosByFechaEnsayo[key], fromCache: true };
+        }
         if (cache.lastRow && cache.lastRow.fecha === fecha && String(cache.lastRow.ensayo_numero) === String(ensayoNumero))
             return { ok: true, data: cache.lastRow.data, fromCache: true };
         return { ok: false, data: null, error: MSJ_SIN_CONEXION };
@@ -604,9 +910,18 @@ export async function getDatosPacking(fecha, ensayoNumero, skipCache) {
         console.warn('[getDatosPacking] Sin datos. Error:', out.error);
         return { ok: false, data: null, error: out.error || "No hay registro." };
     } catch (e) {
-        if (cache.lastRow && cache.lastRow.fecha === fecha && String(cache.lastRow.ensayo_numero) === String(ensayoNumero)) {
+        var cacheAfter = getPackingCache();
+        if (cacheAfter.datosByFechaEnsayo && cacheAfter.datosByFechaEnsayo[key]) {
+            touchRecentSearchInMemory(cacheAfter, key);
+            try {
+                localStorage.setItem(PACKING_CACHE_KEY, JSON.stringify(cacheAfter));
+            } catch (_) {}
+            console.log('[getDatosPacking] Falló la petición, usando caché de búsqueda reciente para', key);
+            return { ok: true, data: cacheAfter.datosByFechaEnsayo[key], fromCache: true };
+        }
+        if (cacheAfter.lastRow && cacheAfter.lastRow.fecha === fecha && String(cacheAfter.lastRow.ensayo_numero) === String(ensayoNumero)) {
             console.log('[getDatosPacking] Falló la petición, usando lastRow.');
-            return { ok: true, data: cache.lastRow.data, fromCache: true };
+            return { ok: true, data: cacheAfter.lastRow.data, fromCache: true };
         }
         console.warn('[getDatosPacking] Error:', e && e.message);
         return { ok: false, data: null, error: e && e.message ? e.message : MSJ_SIN_CONEXION };

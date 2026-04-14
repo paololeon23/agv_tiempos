@@ -21,17 +21,51 @@
                 <i data-lucide="x-circle"></i>
             </button>
         </div>
-        <ul>
-            <li><a href="#" class="active nav-link" data-view="nueva"><i data-lucide="plus-circle"></i> Nueva Cosecha</a></li>
-            <li><a href="#" class="nav-link" data-view="historial"><i data-lucide="history"></i> Historial</a></li>
-            <li><a href="#" class="nav-link" data-view="recomendaciones"><i data-lucide="settings"></i> Recomendaciones</a></li>
+        <div class="sidebar-section-label">Registro</div>
+        <ul class="sidebar-nav-main">
+            <li><a href="#campo" class="active nav-link" data-view="campo"><i data-lucide="leaf"></i><span>Formato campo</span></a></li>
+            <li class="sidebar-nav-group" id="sidebar_nav_group_packing">
+                <button type="button" class="nav-link nav-link--parent" id="nav_btn_packing_desglose" aria-expanded="false" aria-controls="subnav_packing_desglose">
+                    <i data-lucide="package"></i>
+                    <span class="nav-link--parent__label">Packing desglose</span>
+                    <i data-lucide="chevron-down" class="nav-link__sub-chevron" aria-hidden="true"></i>
+                </button>
+                <ul id="subnav_packing_desglose" class="sidebar-nav-sub" role="group" aria-label="Packing desglose" aria-hidden="true">
+                    <li>
+                        <a href="#" class="nav-link nav-link--sub" data-view="formato-packing" title="Tablas packing y Thermo King (según fundo)">
+                            <i data-lucide="package" class="nav-link--sub__icon" aria-hidden="true"></i>
+                            <span>Formato packing</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-link nav-link--sub" data-view="recepcion-c5" title="Recepcion A9 → C5">
+                            <i data-lucide="snowflake" class="nav-link--sub__icon" aria-hidden="true"></i>
+                            <span>Recepcion A9&nbsp;→&nbsp;C5</span>
+                        </a>
+                    </li>
+                </ul>
+            </li>
         </ul>
+        <div class="sidebar-section-label">Más</div>
+        <ul class="sidebar-nav-secondary">
+            <li><a href="pages/historial.html" class="nav-link" data-view="historial"><i data-lucide="history"></i><span>Historial</span></a></li>
+            <li><a href="pages/recomendaciones.html" class="nav-link" data-view="recomendaciones"><i data-lucide="settings"></i><span>Recomendaciones</span></a></li>
+        </ul>
+        <footer class="sidebar-footer" role="contentinfo">
+            <p class="sidebar-footer__tagline">Manejo de la información. Más rápido y sencillo.</p>
+            <p class="sidebar-footer__version" aria-label="Versión de la aplicación"><span class="sidebar-footer__version-label">Versión</span> <span id="app-version">1.0.0</span></p>
+        </footer>
     </nav>
 
     <main class="main-content">
         <header>
             <button id="menu-btn" class="menu-btn"><i data-lucide="menu"></i> Menú</button>
-            <h1>MTTP ARÁNDANO</h1>
+            <div class="header-center">
+                <h1>MTTP ARÁNDANO</h1>
+                <div id="latency-live" class="latency-live latency-unknown" aria-live="polite" title="Calidad de red para envío">
+                    <span id="latency-live-text">Nivel de internet: --</span>
+                </div>
+            </div>
             
             <div id="network-status-container" class="status-card online">
                 <div class="status-info">
@@ -45,18 +79,21 @@
         
         <form id="cosecha-form">
 
+            <div id="wrapper_formato_campo" class="wrapper-formato-campo">
+            <div id="campo" class="hash-route-anchor" tabindex="-1" aria-label="Inicio Formato campo"></div>
             <div class="form-group form-inline main-card">
                 <label for="tipo_medicion">
-                    <i data-lucide="layers"></i> Tipo de Medición:
+                    <i data-lucide="layers"></i> Formato Campo:
                 </label>
                 <select id="tipo_medicion" name="tipo_medicion" class="select-modern" required>
                     <option value="" disabled selected>Seleccione para comenzar...</option>
                     <option value="visual">Calibrado Visual</option>
-                    <option value="packing">Calibrado Packing</option>
+                    <option value="acopio">Calibrado Acopio</option>
                 </select>
             </div>
 
             <hr>
+            </div>
 
             <div id="rotulo_ensayo_wrapper" class="rotulo-ensayo-wrapper">
                 <div class="form-group form-inline main-card">
@@ -180,6 +217,7 @@
                             <i data-lucide="timer"></i>
                             <span>TIEMPO DE LLENADO DE JARRAS (HORA)</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-jarras" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -197,7 +235,7 @@
                                         <th class="b-right">ACCION</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-jarras-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left">
                                             <span id="next_row_jarras">1</span> 
@@ -246,6 +284,7 @@
                             <i data-lucide="scale"></i>
                             <span>ENTRADA DE PESOS: VISUAL</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-visual" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -266,7 +305,7 @@
                                         <th title="Despacho Acopio"><i data-lucide="truck"></i><br>DESP.</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-visual-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left"><span id="next_clam_visual">0</span></td>
                                         <td><input type="number" id="reg_visual_n_jarra" name="reg_visual_n_jarra" placeholder="0" inputmode="numeric" min="1" step="1"></td>
@@ -296,6 +335,7 @@
                             <i data-lucide="clock"></i>
                             <span>TIEMPOS DE LA MUESTRA (HORA)</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-tiempos" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -313,7 +353,7 @@
                                         <th class="b-right">ACCION</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-tiempos-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left"><span id="next_clam_tiempos">0</span></td>
                                         <td><input type="time" id="reg_tiempos_inicio_c" name="reg_tiempos_inicio_c"></td>
@@ -343,6 +383,7 @@
                             <i data-lucide="thermometer"></i>
                             <span>TEMPERATURA MUESTRA (°C)</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-temperaturas" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -369,7 +410,7 @@
                                         <th title="T° Pulpa (Fruta)"><i data-lucide="cherry"></i></th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-temperaturas-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left"><span id="next_clam_temp">0</span></td>
                                         <td><input type="number" id="reg_temp_inicio_amb" name="reg_temp_inicio_amb" placeholder="0.0" step="0.1" min="0"></td>
@@ -401,6 +442,7 @@
                             <i data-lucide="droplets"></i>
                             <span>HUMEDAD RELATIVA (%)</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-humedad" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -417,7 +459,7 @@
                                         <th class="b-right">ACCION</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-humedad-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left"><span id="next_clam_humedad">0</span></td>
                                         <td><input type="number" id="reg_humedad_inicio" name="reg_humedad_inicio" placeholder="0%" step="0.1" inputmode="decimal" min="0"></td>
@@ -446,6 +488,7 @@
                             <i data-lucide="gauge"></i>
                             <span>PRESIÓN DE VAPOR AMBIENTE (Kpa)</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-presion" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -462,7 +505,7 @@
                                         <th class="b-right">ACCION</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-presion-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left"><span id="next_clam_presion">0</span></td>
                                         <td><input type="number" id="reg_presion_amb_inicio" name="reg_presion_amb_inicio" placeholder="0.000" step="0.001" inputmode="decimal" min="0"></td>
@@ -491,6 +534,7 @@
                             <i data-lucide="cherry"></i>
                             <span>PRESIÓN DE VAPOR FRUTA (Kpa)</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-presion-fruta" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -507,7 +551,7 @@
                                         <th rowspan="2" class="b-right">ACCION</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-presion-fruta-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left"><span id="next_clam_presion_fruta">0</span></td>
                                         <td><input type="number" id="reg_presion_fruta_inicio" name="reg_presion_fruta_inicio" placeholder="0.000" step="0.001" inputmode="decimal" min="0"></td>
@@ -536,6 +580,7 @@
                             <i data-lucide="sticky-note"></i>
                             <span>OBSERVACIONES POR MUESTRA</span>
                         </div>
+                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-observacion" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                         <i data-lucide="chevron-down" class="chevron"></i>
                     </div>
 
@@ -549,7 +594,7 @@
                                         <th class="b-right" style="width: 80px;">ACCION</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-observacion-capture">
                                     <tr class="input-table-row">
                                         <td class="b-left">
                                             <span id="next_clam_obs">0</span>
@@ -581,8 +626,8 @@
 
             <div id="view_packing_container" class="packing-container" style="display: none;">
 
-                <!-- Bloque 1: Fecha, Ensayo, Cargar datos -->
-                <div class="form-group packing-fecha-ensayo-row" style="margin-bottom: 1rem;">
+                <!-- Bloque 1a: solo ruta #formato-packing (Fecha, Ensayo, Cargar) -->
+                <div class="form-group packing-fecha-ensayo-row packing-fecha-ensayo-row--solo-packing" style="margin-bottom: 1rem;">
 
                     <div class="row row-fecha-ensayo">
                         <div class="col col-fecha">
@@ -608,33 +653,105 @@
                             </button>
                     </div>
 
-                    <p id="view_no_ensayos_msg" class="view-only-hint view-no-ensayos-msg" style="display: none; margin: 10px 0 0 0; font-size: 0.85rem; color: #b45309;" role="status" aria-live="polite"><i data-lucide="alert-circle"></i> No hay ensayos en esa fecha. Busca otra fecha por favor.</p>
+                    <p id="view_no_ensayos_msg" class="view-only-hint view-no-ensayos-msg" style="display: none; margin: 10px 0 0 0; font-size: 0.85rem; color: #b45309;" role="status" aria-live="polite"><i data-lucide="alert-circle" class="view-no-ensayos-msg__ico" aria-hidden="true"></i><span class="view-no-ensayos-msg__body">No hay ensayos en esa fecha. Busca otra fecha por favor.</span></p>
+
+                    <p id="formato_packing_estado_hoja" class="view-only-hint formato-packing-estado-hoja" style="display: none; margin: 8px 0 0 0; font-size: 0.85rem; color: #334155;" role="status" aria-live="polite"></p>
 
                 </div>
 
-                <!-- Bloque 2: Datos de la hoja (solo visualización) -->
-                <section id="packing_datos_section" class="form-group datos-cargados-solo-lectura">
-                    <p class="view-only-hint" style="margin: 0 0 12px 0; font-size: 0.85rem; color: #555;"><i data-lucide="info"></i> Datos de la hoja: solo visualización. Se usarán al agregar registros en Packing.</p>
+                <!-- Bloque 1b: solo ruta #recepcion-c5 (misma lógica en JS vía espejo a view_fecha / view_ensayo_numero) -->
+                <div class="form-group packing-fecha-ensayo-row packing-fecha-ensayo-row--solo-rc5" style="margin-bottom: 1rem; display: none;">
 
-                    <div class="row">
-                        <div class="col">
-                            <label><i data-lucide="calendar"></i> Fecha Inspección</label> 
-                            <input type="date" id="view_fecha_inspeccion" name="view_fecha_inspeccion">
+                    <div class="row row-fecha-ensayo">
+                        <div class="col col-fecha">
+                            <label><i data-lucide="calendar"></i> Fecha</label>
+                            <input type="date" id="view_fecha_rc5" name="view_fecha_rc5" autocomplete="off">
                         </div>
-                        <div class="col">
-                            <label><i data-lucide="user"></i> Responsable</label>
-                            <input type="text" id="view_responsable" name="view_responsable" placeholder="Nombre del responsable">
+                        <div class="col col-ensayo">
+                            <label><i data-lucide="layers"></i> Ensayo</label>
+                            <div class="ensayo-select-wrap">
+                                <select id="view_ensayo_numero_rc5" name="view_ensayo_numero_rc5" class="select-modern">
+                                    <option value="" disabled selected>Seleccione fecha primero...</option>
+                                </select>
+                                <span id="spinner_ensayos_rc5" class="loading-spinner" aria-hidden="true" style="display: none;"></span>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="row">
+                    <div class="col col-btn-cargar" style="display: flex; align-items: flex-end;">
+                        <button type="button" id="btn_cargar_datos_rc5" class="btn-primary-blue btn-cargar-datos" style="padding: 8px 16px;">
+                            <span class="btn-cargar-text">Cargar datos</span>
+                            <span id="spinner_cargar_rc5" class="loading-spinner btn-spinner" aria-hidden="true" style="display: none;"></span>
+                        </button>
+                    </div>
+
+                    <p id="view_no_ensayos_msg_rc5" class="view-only-hint view-no-ensayos-msg" style="display: none; margin: 10px 0 0 0; font-size: 0.85rem; color: #b45309;" role="status" aria-live="polite"><i data-lucide="alert-circle" class="view-no-ensayos-msg__ico" aria-hidden="true"></i><span class="view-no-ensayos-msg__body">No hay ensayos en esa fecha. Busca otra fecha por favor.</span></p>
+
+                    <div id="rc5_resumen_ensayos_panel" class="rc5-resumen-ensayos" style="display: none;" role="region" aria-label="Resumen de ensayos en la fecha"></div>
+
+                </div>
+
+                <!-- Solo ruta #recepcion-c5: visible por CSS (.packing-route--recepcion-c5 en el contenedor) -->
+                <p class="recepcion-c5-fundo-a9-notice" role="note">
+                    <i data-lucide="info" class="recepcion-c5-fundo-a9-notice__ico" aria-hidden="true"></i>
+                    <span class="recepcion-c5-fundo-a9-notice__text">Se solicita que la información provenga del <strong>Fundo A9</strong> para poder gestionar y guardar los datos de Recepción C5.</span>
+                </p>
+                <div class="packing-route-chip packing-route-chip--c5" role="status" aria-label="Vista Recepción C5">
+                    <span class="packing-route-chip__glow" aria-hidden="true"></span>
+                    <span class="packing-route-chip__icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/></svg>
+                    </span>
+                    <span class="packing-route-chip__titles">
+                        <span class="packing-route-chip__title">Recepción C5</span>
+                        <span class="packing-route-chip__sub">Fundo A9 · línea de frío</span>
+                    </span>
+                    <span class="packing-route-chip__hash" aria-hidden="true">#recepcion-c5</span>
+                </div>
+
+                <div id="formato-packing" class="packing-route-chip packing-route-chip--formato" role="status" aria-label="Formato Packing y Thermo King">
+                    <span class="packing-route-chip__glow" aria-hidden="true"></span>
+                    <span class="packing-route-chip__icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0L3 6.27A2 2 0 0 0 2 8v10a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 22 18V10"/><path d="M3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                    </span>
+                    <span class="packing-route-chip__titles">
+                        <span class="packing-route-chip__title">Formato Packing y Thermo King</span>
+                        <span class="packing-route-chip__sub">Formato bloqueado hasta elegir ensayo y cargar los datos de la hoja.</span>
+                    </span>
+                    <span class="packing-route-chip__modo-wrap packing-rc5-oculto">
+                        <select id="packing_modo_envio" class="packing-modo-envio-select packing-modo-envio-select--chip" disabled title="Carga los datos de la hoja primero" aria-label="Formato de envío">
+                            <option value="">Formato…</option>
+                            <option value="pk">Packing</option>
+                            <option value="tk">Thermo King</option>
+                            <option value="pk-tk">Packing junto con Thermo King</option>
+                        </select>
+                    </span>
+                </div>
+
+                <div class="form-group packing-datos-top-block">
+                    <div class="row packing-rc5-oculto">
                         <div class="col">
-                            <label><i data-lucide="clock"></i> Hora Inicio Recepción</label>
-                            <input type="time" id="view_hora_recepcion" name="view_hora_recepcion">
+                            <label><i data-lucide="calendar"></i> Fecha Inspección</label>
+                            <input type="date" id="view_fecha_inspeccion" name="view_fecha_inspeccion" placeholder="Fecha Inspección">
                         </div>
                         <div class="col">
+                            <label><i data-lucide="user"></i> Responsable</label>
+                            <input type="text" id="view_responsable" name="view_responsable" placeholder="Responsable">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bloque 2: Datos de la hoja (solo visualización) -->
+                <section id="packing_datos_section" class="form-group datos-cargados-solo-lectura packing-datos-hoja-bloque">
+                    <p class="view-only-hint packing-datos-hoja-hint"><i data-lucide="info"></i> Es información de campo; datos solo para visualizar.</p>
+
+                    <div class="row packing-datos-row-ensayo-guia">
+                        <div class="col">
                             <label class="view-only-label"><i data-lucide="tag"></i> Ensayos</label>
-                            <input type="text" id="view_rotulo" name="view_rotulo" class="view-only" readonly placeholder="1 (Ensayo-1)" title="Solo lectura">
+                            <input type="text" id="view_rotulo" name="view_rotulo" class="view-only" readonly placeholder="Ensayos" title="Solo lectura">
+                        </div>
+                        <div class="col">
+                            <label class="view-only-label"><i data-lucide="file-text"></i> N° Guía Despacho</label>
+                            <input type="text" id="view_guia_despacho" name="view_guia_despacho" class="view-only" readonly placeholder="N° Guía Despacho" inputmode="numeric" title="Solo lectura">
                         </div>
                     </div>
                     <div class="row">
@@ -681,29 +798,62 @@
                             </div>
                         </div>
                     </div>
-                    <div class="row">
+                    <div class="row packing-datos-row-triple">
                         <div class="col">
                             <label class="view-only-label"><i data-lucide="leaf"></i> Variedad</label>
-                            <input type="text" id="view_variedad" name="view_variedad" class="view-only" readonly placeholder="VENTURA" style="text-transform: uppercase;" title="Solo lectura">
+                            <input type="text" id="view_variedad" name="view_variedad" class="view-only" readonly placeholder="Variedad" style="text-transform: uppercase;" title="Solo lectura">
                         </div>
-                        <div class="col">
+                        <div class="col col-fundo-packing-tk">
+                            <label class="view-only-label"><i data-lucide="warehouse"></i> Fundo</label>
+                            <div class="packing-fundo-row">
+                                <input type="text" id="view_fundo" name="view_fundo" class="view-only packing-fundo-row__input" readonly placeholder="Fundo" style="text-transform: uppercase;" title="Solo lectura">
+                                <div class="packing-fundo-tk-optin" id="packing_fundo_tk_optin" hidden>
+                                    <input type="checkbox" id="chk_thermoking_habilitar" class="packing-fundo-tk-optin__input" disabled title="Disponible tras cargar datos de la hoja" />
+                                    <label for="chk_thermoking_habilitar" class="packing-fundo-tk-optin__label" title="Casos especiales: en envío combinado, incluir o no Thermo King">Incluir TK</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col packing-rc5-oculto">
                             <label class="view-only-label"><i data-lucide="truck"></i> N° Placa Camioneta</label>
-                            <input type="text" id="view_placa" name="view_placa" class="view-only" readonly placeholder="M81-787" style="text-transform: uppercase;" title="Solo lectura">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col">
-                            <label class="view-only-label"><i data-lucide="file-text"></i> N° Guía Despacho</label>
-                            <input type="text" id="view_guia_despacho" name="view_guia_despacho" class="view-only" readonly placeholder="---" inputmode="numeric" title="Solo lectura">
-                        </div>
-                        <div class="col">
-                            <label><i data-lucide="navigation"></i> N° Viaje</label>
-                            <input type="number" id="view_n_viaje" name="view_n_viaje" placeholder="35">
+                            <input type="text" id="view_placa" name="view_placa" class="view-only" readonly placeholder="N° Placa Camioneta" style="text-transform: uppercase;" title="Solo lectura">
                         </div>
                     </div>
                 </section>
 
-                <!-- Bloque 3: Wrappers Packing -->
+                <div id="wrapper_packing_panel" class="thermoking-wrapper packing-rc5-oculto" style="display: none;" aria-hidden="true">
+                    <div class="thermoking-section-divider__center thermoking-panel packing-panel" role="region" aria-labelledby="packing-divider-title">
+                        <div class="thermoking-panel__head collapsible-toggle" data-target="body-packing-panel" role="button" tabindex="0" aria-expanded="false" aria-controls="body-packing-panel">
+                            <div class="thermoking-section-divider__icon-wrap"><i data-lucide="package"></i></div>
+                            <div class="thermoking-section-divider__titles">
+                                <span class="thermoking-section-divider__badge">Packing</span>
+                                <h3 id="packing-divider-title" class="thermoking-section-divider__title">Mediciones de packing</h3>
+                                <p class="thermoking-section-divider__hint">Línea de proceso</p>
+                            </div>
+                            <button type="button" id="workscope-btn-packing" class="workscope-btn" data-workscope="packing" title="Trabajar con Packing" aria-label="Trabajar con Packing">
+                                <i data-lucide="briefcase"></i>
+                            </button>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--panel" data-progress-root="body-packing-panel" role="presentation">
+                                <div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div>
+                                <span class="thermoking-progress-label"></span>
+                            </div>
+                            <i data-lucide="chevron-down" class="chevron thermoking-panel__chevron" aria-hidden="true"></i>
+                        </div>
+                        <div class="thermoking-panel__body" id="body-packing-panel" style="display: none;">
+                            <div class="form-group packing-meta-block">
+                                <div class="row packing-row-packing-meta">
+                                    <div class="col">
+                                        <label><i data-lucide="clock"></i> Hora Inicio Recepción</label>
+                                        <input type="time" id="view_hora_recepcion" name="view_hora_recepcion" placeholder="Hora Inicio Recepción">
+                                    </div>
+                                    <div class="col">
+                                        <label><i data-lucide="navigation"></i> N° Viaje</label>
+                                        <input type="number" id="view_n_viaje" name="view_n_viaje" placeholder="N° Viaje">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Bloque 3: Wrappers Packing principal -->
+                            <div id="packing_bloque_principal" class="packing-bloque-principal">
                 <div id="wrapper_packing_1" class="collapsible-wrapper">
                     <div class="collapsible-card">
                         <div class="card-header collapsible-toggle" data-target="body-packing-1">
@@ -711,6 +861,7 @@
                                 <i data-lucide="package"></i>
                                 <span>TIEMPOS DE LA MUESTRA - PACKING 1</span>
                             </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-1" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </div>
 
@@ -722,13 +873,13 @@
                                             <th class="b-left">N°</th>
                                             <th title="Recepción"><i data-lucide="download"></i><br>RECEP.</th>
                                             <th title="Ingreso Gasificado"><i data-lucide="log-in"></i><br>IN. GAS.</th>
-                                            <th title="Salida Gasificado"><i data-lucide="log-out"></i><br>OUT GAS.</th>
+                                            <th title="Salida Gasificado"><i data-lucide="log-out"></i><br>SAL. GAS.</th>
                                             <th title="Ingreso Prefrío"><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th>
-                                            <th title="Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>OUT PRE.</th>
+                                            <th title="Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th>
                                             <th class="b-right">ACCION</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="tbody-packing-capture-1">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing">1</span></td>
                                             <td><input type="time" class="packing-time-no-clock" id="reg_packing_recepcion" name="reg_packing_recepcion"></td>
@@ -758,6 +909,7 @@
                                 <i data-lucide="scale"></i>
                                 <span>PESO BRUTO MUESTRA (GR)</span>
                             </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-2" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </div>
 
@@ -769,13 +921,13 @@
                                             <th class="b-left">N°</th>
                                             <th title="Peso Recepción"><i data-lucide="download"></i><br>RECEP.</th>
                                             <th title="Peso Ingreso Gasificado"><i data-lucide="log-in"></i><br>IN. GAS.</th>
-                                            <th title="Peso Salida Gasificado"><i data-lucide="log-out"></i><br>OUT GAS.</th>
+                                            <th title="Peso Salida Gasificado"><i data-lucide="log-out"></i><br>SAL. GAS.</th>
                                             <th title="Peso Ingreso Prefrío"><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th>
-                                            <th title="Peso Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>OUT PRE.</th>
+                                            <th title="Peso Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th>
                                             <th class="b-right">ACCION</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="tbody-packing-capture-pesos">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_pesos">1</span></td>
                                             <td><input type="number" step="0.1" min="0" id="reg_packing_peso_recepcion" name="reg_packing_peso_recepcion" placeholder="0.0" title="gramos (g)"></td>
@@ -805,6 +957,7 @@
                                 <i data-lucide="thermometer"></i>
                                 <span>TEMPERATURA MUESTRA (°C)</span>
                             </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-3" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </div>
 
@@ -816,9 +969,9 @@
                                             <th rowspan="2" class="b-left">N°</th>
                                             <th colspan="2">RECEPCIÓN</th>
                                             <th colspan="2">IN. GASIF.</th>
-                                            <th colspan="2">OUT GASIF.</th>
+                                            <th colspan="2">SAL. GASIF.</th>
                                             <th colspan="2">IN. PRE.</th>
-                                            <th colspan="2">OUT PRE.</th>
+                                            <th colspan="2">SAL. PRE.</th>
                                             <th rowspan="2" class="b-right">ACCION</th>
                                         </tr>
                                         <tr>
@@ -834,7 +987,7 @@
                                             <th title="T° Pulpa"><i data-lucide="cherry"></i></th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="tbody-packing-capture-temp">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing_temp">1</span></td>
                                             <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_recepcion" name="reg_packing_temp_amb_recepcion" placeholder="0.0" title="°C"></td>
@@ -870,6 +1023,7 @@
                                 <i data-lucide="droplets"></i>
                                 <span>HUMEDAD RELATIVA (%)</span>
                             </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-4" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </div>
 
@@ -881,13 +1035,13 @@
                                             <th class="b-left">N°</th>
                                             <th title="Humedad Recepción"><i data-lucide="download"></i><br>RECEP.</th>
                                             <th title="Humedad Ingreso Gasificado"><i data-lucide="log-in"></i><br>IN. GAS.</th>
-                                            <th title="Humedad Salida Gasificado"><i data-lucide="log-out"></i><br>OUT GAS.</th>
+                                            <th title="Humedad Salida Gasificado"><i data-lucide="log-out"></i><br>SAL. GAS.</th>
                                             <th title="Humedad Ingreso Prefrío"><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th>
-                                            <th title="Humedad Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>OUT PRE.</th>
+                                            <th title="Humedad Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th>
                                             <th class="b-right">ACCION</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="tbody-packing-capture-humedad">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing_humedad">1</span></td>
                                             <td><input type="number" step="0.1" min="0" id="reg_packing_humedad_recepcion" name="reg_packing_humedad_recepcion" placeholder="0.0" title="%"></td>
@@ -917,6 +1071,7 @@
                                 <i data-lucide="wind"></i>
                                 <span>PRESIÓN DE VAPOR AMBIENTE (Kpa)</span>
                             </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </div>
 
@@ -928,13 +1083,13 @@
                                             <th class="b-left">N°</th>
                                             <th title="Presión Recepción"><i data-lucide="download"></i><br>RECEP.</th>
                                             <th title="Presión Ingreso Gasificado"><i data-lucide="log-in"></i><br>IN. GAS.</th>
-                                            <th title="Presión Salida Gasificado"><i data-lucide="log-out"></i><br>OUT GAS.</th>
+                                            <th title="Presión Salida Gasificado"><i data-lucide="log-out"></i><br>SAL. GAS.</th>
                                             <th title="Presión Ingreso Prefrío"><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th>
-                                            <th title="Presión Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>OUT PRE.</th>
+                                            <th title="Presión Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th>
                                             <th class="b-right">ACCION</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="tbody-packing-capture-presion">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing_presion">1</span></td>
                                             <td><input type="number" step="0.001" min="0" id="reg_packing_presion_recepcion" name="reg_packing_presion_recepcion" placeholder="0.000"></td>
@@ -964,6 +1119,7 @@
                                 <i data-lucide="apple"></i>
                                 <span>PRESIÓN DE VAPOR FRUTA (Kpa)</span>
                             </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-6" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </div>
 
@@ -975,13 +1131,13 @@
                                             <th class="b-left">N°</th>
                                             <th title="Presión Fruta Recepción"><i data-lucide="download"></i><br>RECEP.</th>
                                             <th title="Presión Fruta Ingreso Gasificado"><i data-lucide="log-in"></i><br>IN. GAS.</th>
-                                            <th title="Presión Fruta Salida Gasificado"><i data-lucide="log-out"></i><br>OUT GAS.</th>
+                                            <th title="Presión Fruta Salida Gasificado"><i data-lucide="log-out"></i><br>SAL. GAS.</th>
                                             <th title="Presión Fruta Ingreso Prefrío"><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th>
-                                            <th title="Presión Fruta Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>OUT PRE.</th>
+                                            <th title="Presión Fruta Salida Prefrío"><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th>
                                             <th class="b-right">ACCION</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="tbody-packing-capture-presion-fruta">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing_presion_fruta">1</span></td>
                                             <td><input type="number" step="0.001" min="0" id="reg_packing_presion_fruta_recepcion" name="reg_packing_presion_fruta_recepcion" placeholder="0.000"></td>
@@ -1011,6 +1167,7 @@
                                 <i data-lucide="sticky-note"></i>
                                 <span>OBSERVACIONES POR MUESTRA</span>
                             </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-8" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </div>
 
@@ -1024,7 +1181,7 @@
                                             <th class="b-right" style="width: 80px;">ACCION</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="tbody-packing-capture-obs">
                                         <tr class="input-table-row">
                                             <td class="b-left"><span id="next_clam_packing_obs">1</span></td>
                                             <td><input type="text" id="reg_packing_obs_texto" name="reg_packing_obs_texto" placeholder="Escriba aquí la nota de la muestra (ej: # pallet)..."></td>
@@ -1039,6 +1196,443 @@
                                         </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Thermo King (visible si checkbox junto a Fundo): después de Packing 8 — todo dentro de thermoking-section-divider__center; cabecera abre/cierra el bloque -->
+                <div id="wrapper_thermoking_1" class="thermoking-wrapper" style="display: none;" aria-hidden="true">
+                    <div class="thermoking-section-divider__center thermoking-panel" role="region" aria-labelledby="thermoking-divider-title">
+                        <div class="thermoking-panel__head collapsible-toggle" data-target="body-thermoking-panel" role="button" tabindex="0" aria-expanded="false" aria-controls="body-thermoking-panel">
+                            <div class="thermoking-section-divider__icon-wrap"><i data-lucide="truck"></i></div>
+                            <div class="thermoking-section-divider__titles">
+                                <span class="thermoking-section-divider__badge">Thermo King</span>
+                                <h3 id="thermoking-divider-title" class="thermoking-section-divider__title">Mediciones complementarias</h3>
+                                <p class="thermoking-section-divider__hint">Según fundo en hoja · línea de frío</p>
+                            </div>
+                            <button type="button" id="workscope-btn-thermoking" class="workscope-btn" data-workscope="thermoking" title="Trabajar con Thermo King" aria-label="Trabajar con Thermo King">
+                                <i data-lucide="briefcase"></i>
+                            </button>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--panel" data-progress-root="body-thermoking-panel" role="presentation">
+                                <div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div>
+                                <span class="thermoking-progress-label"></span>
+                            </div>
+                            <i data-lucide="chevron-down" class="chevron thermoking-panel__chevron" aria-hidden="true"></i>
+                        </div>
+                        <div class="thermoking-panel__body" id="body-thermoking-panel" style="display: none;">
+                            <div class="form-group packing-meta-block thermoking-meta-block">
+                                <div class="row thermoking-meta-row thermoking-meta-row--hora-placa">
+                                    <div class="col">
+                                        <label for="hora_salida_thermoking"><i data-lucide="log-out"></i> Hora salida frío</label>
+                                        <input type="time" id="hora_salida_thermoking" name="hora_salida_thermoking" class="packing-time-no-clock" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                    </div>
+                                    <div class="col">
+                                        <label for="placa_thermoking"><i data-lucide="truck"></i> Placa Thermo King</label>
+                                        <input type="text" id="placa_thermoking" name="placa_thermoking" placeholder="Placa" maxlength="24" style="text-transform: uppercase;" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p class="thermoking-campo-info-hint" role="note"><i data-lucide="info" aria-hidden="true"></i> Es información de campo; datos solo para visualizar.</p>
+
+                            <div class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-thermoking-tiempos">
+                                        <div class="header-info">
+                                            <i data-lucide="clock"></i>
+                                            <span>TIEMPOS DE LA MUESTRA (HORA)</span>
+                                        </div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-thermoking-tiempos" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body" id="body-thermoking-tiempos">
+                                        <div class="table-scroll thermoking-table-scroll">
+                                            <table class="table-field-style thermoking-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="b-left">N°</th>
+                                                        <th title="ingreso_camaraMP_tiempos_thermoking"><i data-lucide="warehouse"></i><br>ING. CÁM. MP</th>
+                                                        <th title="salida_camaraMP_tiempos_thermoking"><i data-lucide="arrow-right-left"></i><br>SAL. CÁM. MP</th>
+                                                        <th title="inicio_traslado_tiempos_thermoking"><i data-lucide="play"></i><br>INIC. TRASL. T-H</th>
+                                                        <th title="despacho_tiempos_thermoking"><i data-lucide="send"></i><br>DESPACHO T-H</th>
+                                                        <th class="b-right">ACCION</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="input-table-row">
+                                                        <td class="b-left"><span id="next_clam_thermoking_tiempos">1</span></td>
+                                                        <td><input type="time" class="packing-time-no-clock" id="ingreso_camaraMP_tiempos_thermoking" name="ingreso_camaraMP_tiempos_thermoking" title="Ingreso cámara MP"></td>
+                                                        <td><input type="time" class="packing-time-no-clock" id="salida_camaraMP_tiempos_thermoking" name="salida_camaraMP_tiempos_thermoking" title="Salida cámara MP"></td>
+                                                        <td><input type="time" class="packing-time-no-clock" id="inicio_traslado_tiempos_thermoking" name="inicio_traslado_tiempos_thermoking" title="Inicio traslado T-H"></td>
+                                                        <td><input type="time" class="packing-time-no-clock" id="despacho_tiempos_thermoking" name="despacho_tiempos_thermoking" title="Despacho T-H"></td>
+                                                        <td class="b-right">
+                                                            <button type="button" id="btn-add-thermoking-tiempos" class="btn-mini-add" title="Agregar fila">
+                                                                <i data-lucide="plus"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                                <tbody id="tbody-thermoking-tiempos"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-thermoking-peso">
+                                        <div class="header-info">
+                                            <i data-lucide="scale"></i>
+                                            <span>PESO DE BRUTO MUESTRA (GR)</span>
+                                        </div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-thermoking-peso" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body" id="body-thermoking-peso">
+                                        <div class="table-scroll thermoking-table-scroll">
+                                            <table class="table-field-style thermoking-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="b-left">N°</th>
+                                                        <th title="ingreso_camaraMP_peso_thermoking"><i data-lucide="warehouse"></i><br>ING. CÁM. MP</th>
+                                                        <th title="salida_camaraMP_peso_thermoking"><i data-lucide="arrow-right-left"></i><br>SAL. CÁM. MP</th>
+                                                        <th title="inicio_traslado_peso_thermoking"><i data-lucide="play"></i><br>INIC. TRASL. T-H</th>
+                                                        <th title="despacho_peso_thermoking"><i data-lucide="send"></i><br>DESPACHO T-H</th>
+                                                        <th class="b-right">ACCION</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="input-table-row">
+                                                        <td class="b-left"><span id="next_clam_thermoking_peso">1</span></td>
+                                                        <td><input type="number" step="0.1" min="0" id="ingreso_camaraMP_peso_thermoking" name="ingreso_camaraMP_peso_thermoking" placeholder="0.0" title="g"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="salida_camaraMP_peso_thermoking" name="salida_camaraMP_peso_thermoking" placeholder="0.0" title="g"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="inicio_traslado_peso_thermoking" name="inicio_traslado_peso_thermoking" placeholder="0.0" title="g"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="despacho_peso_thermoking" name="despacho_peso_thermoking" placeholder="0.0" title="g"></td>
+                                                        <td class="b-right">
+                                                            <button type="button" id="btn-add-thermoking-peso" class="btn-mini-add" title="Agregar fila">
+                                                                <i data-lucide="plus"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                                <tbody id="tbody-thermoking-peso"></tbody>
+                                            </table>
+                                        </div>
+                                        <p id="tk_peso_validacion_msg" class="tk-peso-validacion-msg" role="alert" aria-live="polite" style="display:none;"></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-thermoking-temperatura">
+                                        <div class="header-info">
+                                            <i data-lucide="thermometer"></i>
+                                            <span>TEMPERATURA MUESTRA (°C)</span>
+                                        </div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-thermoking-temperatura" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body thermoking-temp-body" id="body-thermoking-temperatura">
+                                        <div class="table-scroll thermoking-table-scroll">
+                                            <table class="table-field-style thermoking-table thermoking-temp-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th rowspan="2" class="b-left">N°</th>
+                                                        <th colspan="2">ING. CÁM. MP</th>
+                                                        <th colspan="2">SAL. CÁM. MP</th>
+                                                        <th colspan="3">INIC. TRASL. T-H</th>
+                                                        <th colspan="3">DESPACHO T-H</th>
+                                                        <th rowspan="2" class="b-right">ACCION</th>
+                                                    </tr>
+                                                    <tr>
+                                                        <th title="ingreso_camaraMP · Temperatura_camaraMP"><i data-lucide="thermometer-sun"></i></th>
+                                                        <th title="ingreso_camaraMP · Temperatura pulpa"><i data-lucide="cherry"></i></th>
+                                                        <th title="salida_traslado · Temperatura_camaraMP"><i data-lucide="thermometer-sun"></i></th>
+                                                        <th title="salida_traslado · Temperatura pulpa"><i data-lucide="cherry"></i></th>
+                                                        <th title="inicio_traslado · ambiente"><i data-lucide="thermometer-sun"></i></th>
+                                                        <th title="inicio_traslado · int. vehículo"><i data-lucide="car"></i></th>
+                                                        <th title="inicio_traslado · pulpa"><i data-lucide="cherry"></i></th>
+                                                        <th title="despacho · ambiente"><i data-lucide="thermometer-sun"></i></th>
+                                                        <th title="despacho · int. vehículo"><i data-lucide="car"></i></th>
+                                                        <th title="despacho · pulpa"><i data-lucide="cherry"></i></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="input-table-row">
+                                                        <td class="b-left"><span id="next_clam_thermoking_temp">1</span></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_ic_cm" name="reg_tk_temp_ic_cm" placeholder="0.0" title="°C ingreso-cámara MP"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_ic_pu" name="reg_tk_temp_ic_pu" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_st_cm" name="reg_tk_temp_st_cm" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_st_pu" name="reg_tk_temp_st_pu" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_it_amb" name="reg_tk_temp_it_amb" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_it_veh" name="reg_tk_temp_it_veh" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_it_pu" name="reg_tk_temp_it_pu" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_d_amb" name="reg_tk_temp_d_amb" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_d_veh" name="reg_tk_temp_d_veh" placeholder="0.0" title="°C"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="reg_tk_temp_d_pu" name="reg_tk_temp_d_pu" placeholder="0.0" title="°C"></td>
+                                                        <td class="b-right">
+                                                            <button type="button" id="btn-add-tk-temp" class="btn-mini-add" title="Agregar fila">
+                                                                <i data-lucide="plus"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                                <tbody id="tbody-thermoking-temp"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-thermoking-humedad">
+                                        <div class="header-info">
+                                            <i data-lucide="droplets"></i>
+                                            <span>HUMEDAD RELATIVA (%)</span>
+                                        </div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-thermoking-humedad" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body" id="body-thermoking-humedad">
+                                        <div class="table-scroll thermoking-table-scroll">
+                                            <table class="table-field-style thermoking-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="b-left">N°</th>
+                                                        <th title="ingreso_camaraMP_humedad_thermoking"><i data-lucide="warehouse"></i><br>ING. CÁM. MP</th>
+                                                        <th title="salida_traslado_humedad_thermoking"><i data-lucide="arrow-right-left"></i><br>SAL. CÁM. MP</th>
+                                                        <th title="ambienteExt_inicio_humedad_thermoking"><i data-lucide="sun"></i><br>AMB. EXT. INIC.</th>
+                                                        <th title="interior_vehiculo_inicio_thermoking"><i data-lucide="car"></i><br>INT. VEH. INIC.</th>
+                                                        <th title="ambienteExt_despacho_thermoking"><i data-lucide="cloud-sun"></i><br>AMB. EXT. DESP.</th>
+                                                        <th title="interior_vehiculo_despacho_thermoking"><i data-lucide="car"></i><br>INT. VEH. DESP.</th>
+                                                        <th class="b-right">ACCION</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="input-table-row">
+                                                        <td class="b-left"><span id="next_clam_thermoking_humedad">1</span></td>
+                                                        <td><input type="number" step="0.1" min="0" id="ingreso_camaraMP_humedad_thermoking" name="ingreso_camaraMP_humedad_thermoking" placeholder="0.0" title="%"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="salida_traslado_humedad_thermoking" name="salida_traslado_humedad_thermoking" placeholder="0.0" title="%"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="ambienteExt_inicio_humedad_thermoking" name="ambienteExt_inicio_humedad_thermoking" placeholder="0.0" title="%"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="interior_vehiculo_inicio_thermoking" name="interior_vehiculo_inicio_thermoking" placeholder="0.0" title="%"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="ambienteExt_despacho_thermoking" name="ambienteExt_despacho_thermoking" placeholder="0.0" title="%"></td>
+                                                        <td><input type="number" step="0.1" min="0" id="interior_vehiculo_despacho_thermoking" name="interior_vehiculo_despacho_thermoking" placeholder="0.0" title="%"></td>
+                                                        <td class="b-right">
+                                                            <button type="button" id="btn-add-thermoking-humedad" class="btn-mini-add" title="Agregar fila">
+                                                                <i data-lucide="plus"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                                <tbody id="tbody-thermoking-humedad"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-thermoking-presion-amb">
+                                        <div class="header-info">
+                                            <i data-lucide="wind"></i>
+                                            <span>PRESIÓN DE VAPOR AMBIENTE (Kpa)</span>
+                                        </div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-thermoking-presion-amb" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body" id="body-thermoking-presion-amb">
+                                        <div class="table-scroll thermoking-table-scroll">
+                                            <table class="table-field-style thermoking-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="b-left">N°</th>
+                                                        <th title="ingreso_camaraMP_presion_thermoking"><i data-lucide="warehouse"></i><br>ING. CÁM. MP</th>
+                                                        <th title="salida_traslado_presion_thermoking"><i data-lucide="arrow-right-left"></i><br>SAL. CÁM. MP</th>
+                                                        <th title="ambienteExt_inicio_presion_thermoking"><i data-lucide="sun"></i><br>AMB. EXT. INIC.</th>
+                                                        <th title="interior_vehiculo_inicio_presion_thermoking"><i data-lucide="car"></i><br>INT. VEH. INIC.</th>
+                                                        <th title="ambienteExt_despacho_presion_thermoking"><i data-lucide="cloud-sun"></i><br>AMB. EXT. DESP.</th>
+                                                        <th title="interior_vehiculo_despacho_presion_thermoking"><i data-lucide="car"></i><br>INT. VEH. DESP.</th>
+                                                        <th class="b-right">ACCION</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="input-table-row">
+                                                        <td class="b-left"><span id="next_clam_thermoking_presion">1</span></td>
+                                                        <td><input type="number" step="0.001" min="0" id="ingreso_camaraMP_presion_thermoking" name="ingreso_camaraMP_presion_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="salida_traslado_presion_thermoking" name="salida_traslado_presion_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="ambienteExt_inicio_presion_thermoking" name="ambienteExt_inicio_presion_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="interior_vehiculo_inicio_presion_thermoking" name="interior_vehiculo_inicio_presion_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="ambienteExt_despacho_presion_thermoking" name="ambienteExt_despacho_presion_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="interior_vehiculo_despacho_presion_thermoking" name="interior_vehiculo_despacho_presion_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td class="b-right">
+                                                            <button type="button" id="btn-add-thermoking-presion" class="btn-mini-add" title="Agregar fila">
+                                                                <i data-lucide="plus"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                                <tbody id="tbody-thermoking-presion"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-thermoking-vapor-fruta">
+                                        <div class="header-info">
+                                            <i data-lucide="apple"></i>
+                                            <span>PRESIÓN DE VAPOR FRUTA (Kpa)</span>
+                                        </div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-thermoking-vapor-fruta" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body" id="body-thermoking-vapor-fruta">
+                                        <div class="table-scroll thermoking-table-scroll">
+                                            <table class="table-field-style thermoking-table thermoking-table--4">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="b-left">N°</th>
+                                                        <th title="ingreso_camaraMP_vapor_thermoking"><i data-lucide="warehouse"></i><br>ING. CÁM. MP</th>
+                                                        <th title="salida_camaraMP_vapor_thermoking"><i data-lucide="arrow-right-left"></i><br>SAL. CÁM. MP</th>
+                                                        <th title="inicio_traslado_vapor_thermoking"><i data-lucide="route"></i><br>INIC. TRASL. T-H</th>
+                                                        <th title="salida_traslado_vapor_thermoking"><i data-lucide="arrow-right-left"></i><br>SAL. TRASL. T-H</th>
+                                                        <th class="b-right">ACCION</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="input-table-row">
+                                                        <td class="b-left"><span id="next_clam_thermoking_vapor">1</span></td>
+                                                        <td><input type="number" step="0.001" min="0" id="ingreso_camaraMP_vapor_thermoking" name="ingreso_camaraMP_vapor_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="salida_camaraMP_vapor_thermoking" name="salida_camaraMP_vapor_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="inicio_traslado_vapor_thermoking" name="inicio_traslado_vapor_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td><input type="number" step="0.001" min="0" id="salida_traslado_vapor_thermoking" name="salida_traslado_vapor_thermoking" placeholder="0.000" title="Kpa"></td>
+                                                        <td class="b-right">
+                                                            <button type="button" id="btn-add-thermoking-vapor" class="btn-mini-add" title="Agregar fila">
+                                                                <i data-lucide="plus"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                                <tbody id="tbody-thermoking-vapor"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-thermoking-obs">
+                                        <div class="header-info">
+                                            <i data-lucide="sticky-note"></i>
+                                            <span>OBSERVACIONES POR MUESTRA</span>
+                                        </div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-thermoking-obs" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body" id="body-thermoking-obs">
+                                        <div class="table-scroll">
+                                            <table class="table-field-style">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="b-left" style="width: 80px;">N°</th>
+                                                        <th>DETALLE DE LA OBSERVACIÓN</th>
+                                                        <th class="b-right" style="width: 80px;">ACCION</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="input-table-row">
+                                                        <td class="b-left"><span id="next_clam_thermoking_obs">1</span></td>
+                                                        <td><input type="text" id="reg_thermoking_obs_texto" name="reg_thermoking_obs_texto" placeholder="Escriba aquí la nota de la muestra (ej: # pallet)…"></td>
+                                                        <td class="b-right">
+                                                            <button type="button" id="btn-add-thermoking-obs" class="btn-mini-add" title="Agregar fila">
+                                                                <i data-lucide="plus"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                                <tbody id="tbody-thermoking-obs"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+                <!-- C5 (solo Fundo A9): mismo criterio que Thermo King; panel cerrado por defecto -->
+                <div id="wrapper_c5_1" class="thermoking-wrapper" style="display: none;" aria-hidden="true">
+                    <div class="thermoking-section-divider__center thermoking-panel" role="region" aria-labelledby="c5-divider-title">
+                        <div class="thermoking-panel__head collapsible-toggle" data-target="body-c5-panel" role="button" tabindex="0" aria-expanded="false" aria-controls="body-c5-panel">
+                            <div class="thermoking-section-divider__icon-wrap"><i data-lucide="layers"></i></div>
+                            <div class="thermoking-section-divider__titles">
+                                <span class="thermoking-section-divider__badge">THERMO KING</span>
+                                <h3 id="c5-divider-title" class="thermoking-section-divider__title">Recepcion C5</h3>
+                                <p class="thermoking-section-divider__hint">línea de frío</p>
+                            </div>
+                            <div class="thermoking-progress-wrap thermoking-progress-wrap--panel" data-progress-root="body-c5-panel" role="presentation">
+                                <div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div>
+                                <span class="thermoking-progress-label"></span>
+                            </div>
+                            <i data-lucide="chevron-down" class="chevron thermoking-panel__chevron" aria-hidden="true"></i>
+                        </div>
+                        <div class="thermoking-panel__body" id="body-c5-panel" style="display: none;">
+                            <div class="form-group packing-datos-top-block packing-datos-top-block--c5 thermoking-panel__c5-meta">
+                                <div class="row packing-c5-meta-top">
+                                    <div class="col">
+                                        <label for="hora_inicio_recepcion_c5"><i data-lucide="log-in"></i> Hora inicio recepción</label>
+                                        <input type="time" id="hora_inicio_recepcion_c5" name="hora_inicio_recepcion_c5" class="packing-time-no-clock" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                    </div>
+                                    <div class="col">
+                                        <label for="responsable_c5"><i data-lucide="user"></i> Responsable</label>
+                                        <input type="text" id="responsable_c5" name="responsable_c5" placeholder="Responsable" maxlength="80" autocomplete="name" title="Por fecha y ensayo (se guarda al cambiar de ensayo)">
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="wrapper_packing_1_c5" class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-packing-1_c5">
+                                        <div class="header-info"><i data-lucide="package"></i><span>TIEMPOS DE LA MUESTRA - PACKING 1</span></div>
+                                        <div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-1_c5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div>
+                                        <i data-lucide="chevron-down" class="chevron"></i>
+                                    </div>
+                                    <div class="card-body" id="body-packing-1_c5">
+                                        <div class="table-scroll"><table class="table-field-style"><thead><tr><th class="b-left">N°</th><th><i data-lucide="download"></i><br>RECEP.</th><th><i data-lucide="log-in"></i><br>IN. GAS.</th><th><i data-lucide="log-out"></i><br>SAL. GAS.</th><th><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th><th><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th><th class="b-right">ACCION</th></tr></thead>
+                                        <tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_packing_c5">1</span></td>
+                                        <td><input type="time" class="packing-time-no-clock" id="reg_packing_recepcion_c5" name="reg_packing_recepcion_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_ingreso_gasificado_c5" name="reg_packing_ingreso_gasificado_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_salida_gasificado_c5" name="reg_packing_salida_gasificado_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_ingreso_prefrio_c5" name="reg_packing_ingreso_prefrio_c5"></td><td><input type="time" class="packing-time-no-clock" id="reg_packing_salida_prefrio_c5" name="reg_packing_salida_prefrio_c5"></td>
+                                        <td class="b-right"><button type="button" id="btn-add-packing_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody>
+                                        <tbody id="tbody-packing-1_c5"></tbody></table></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="wrapper_packing_2_c5" class="collapsible-wrapper">
+                                <div class="collapsible-card">
+                                    <div class="card-header collapsible-toggle" data-target="body-packing-2_c5"><div class="header-info"><i data-lucide="scale"></i><span>PESO BRUTO MUESTRA (GR)</span></div><div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-2_c5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div><i data-lucide="chevron-down" class="chevron"></i></div>
+                                    <div class="card-body" id="body-packing-2_c5"><div class="table-scroll"><table class="table-field-style"><thead><tr><th class="b-left">N°</th><th><i data-lucide="download"></i><br>RECEP.</th><th><i data-lucide="log-in"></i><br>IN. GAS.</th><th><i data-lucide="log-out"></i><br>SAL. GAS.</th><th><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th><th><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th><th class="b-right">ACCION</th></tr></thead>
+                                    <tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_pesos_c5">1</span></td>
+                                    <td><input type="number" step="0.1" min="0" id="reg_packing_peso_recepcion_c5" name="reg_packing_peso_recepcion_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_peso_ingreso_gasificado_c5" name="reg_packing_peso_ingreso_gasificado_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_peso_salida_gasificado_c5" name="reg_packing_peso_salida_gasificado_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_peso_ingreso_prefrio_c5" name="reg_packing_peso_ingreso_prefrio_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_peso_salida_prefrio_c5" name="reg_packing_peso_salida_prefrio_c5" placeholder="0.0"></td>
+                                    <td class="b-right"><button type="button" id="btn-add-pesos_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody>
+                                    <tbody id="tbody-packing-pesos_c5"></tbody></table></div></div>
+                                </div>
+                            </div>
+                            <div id="wrapper_packing_3_c5" class="collapsible-wrapper"><div class="collapsible-card"><div class="card-header collapsible-toggle" data-target="body-packing-3_c5"><div class="header-info"><i data-lucide="thermometer"></i><span>TEMPERATURA MUESTRA (°C)</span></div><div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-3_c5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div><i data-lucide="chevron-down" class="chevron"></i></div><div class="card-body" id="body-packing-3_c5"><div class="table-scroll"><table class="table-field-style"><thead><tr><th rowspan="2" class="b-left">N°</th><th colspan="2">RECEPCIÓN</th><th colspan="2">IN. GASIF.</th><th colspan="2">SAL. GASIF.</th><th colspan="2">IN. PRE.</th><th colspan="2">SAL. PRE.</th><th rowspan="2" class="b-right">ACCION</th></tr><tr><th><i data-lucide="thermometer-sun"></i></th><th><i data-lucide="cherry"></i></th><th><i data-lucide="thermometer-sun"></i></th><th><i data-lucide="cherry"></i></th><th><i data-lucide="thermometer-sun"></i></th><th><i data-lucide="cherry"></i></th><th><i data-lucide="thermometer-sun"></i></th><th><i data-lucide="cherry"></i></th><th><i data-lucide="thermometer-sun"></i></th><th><i data-lucide="cherry"></i></th></tr></thead><tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_packing_temp_c5">1</span></td>
+                            <td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_recepcion_c5" name="reg_packing_temp_amb_recepcion_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_recepcion_c5" name="reg_packing_temp_pulp_recepcion_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_ingreso_gas_c5" name="reg_packing_temp_amb_ingreso_gas_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_ingreso_gas_c5" name="reg_packing_temp_pulp_ingreso_gas_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_salida_gas_c5" name="reg_packing_temp_amb_salida_gas_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_salida_gas_c5" name="reg_packing_temp_pulp_salida_gas_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_ingreso_pre_c5" name="reg_packing_temp_amb_ingreso_pre_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_ingreso_pre_c5" name="reg_packing_temp_pulp_ingreso_pre_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_amb_salida_pre_c5" name="reg_packing_temp_amb_salida_pre_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_temp_pulp_salida_pre_c5" name="reg_packing_temp_pulp_salida_pre_c5" placeholder="0.0"></td>
+                            <td class="b-right"><button type="button" id="btn-add-temp_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody><tbody id="tbody-packing-temp_c5"></tbody></table></div></div></div></div>
+                            <div id="wrapper_packing_4_c5" class="collapsible-wrapper"><div class="collapsible-card"><div class="card-header collapsible-toggle" data-target="body-packing-4_c5"><div class="header-info"><i data-lucide="droplets"></i><span>HUMEDAD RELATIVA (%)</span></div><div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-4_c5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div><i data-lucide="chevron-down" class="chevron"></i></div><div class="card-body" id="body-packing-4_c5"><div class="table-scroll"><table class="table-field-style"><thead><tr><th class="b-left">N°</th><th><i data-lucide="download"></i><br>RECEP.</th><th><i data-lucide="log-in"></i><br>IN. GAS.</th><th><i data-lucide="log-out"></i><br>SAL. GAS.</th><th><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th><th><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th><th class="b-right">ACCION</th></tr></thead><tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_packing_humedad_c5">1</span></td><td><input type="number" step="0.1" min="0" id="reg_packing_humedad_recepcion_c5" name="reg_packing_humedad_recepcion_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_humedad_ingreso_gasificado_c5" name="reg_packing_humedad_ingreso_gasificado_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_humedad_salida_gasificado_c5" name="reg_packing_humedad_salida_gasificado_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_humedad_ingreso_prefrio_c5" name="reg_packing_humedad_ingreso_prefrio_c5" placeholder="0.0"></td><td><input type="number" step="0.1" min="0" id="reg_packing_humedad_salida_prefrio_c5" name="reg_packing_humedad_salida_prefrio_c5" placeholder="0.0"></td><td class="b-right"><button type="button" id="btn-add-packing-humedad_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody><tbody id="tbody-packing-humedad_c5"></tbody></table></div></div></div></div>
+                            <div id="wrapper_packing_5_c5" class="collapsible-wrapper"><div class="collapsible-card"><div class="card-header collapsible-toggle" data-target="body-packing-5_c5"><div class="header-info"><i data-lucide="wind"></i><span>PRESIÓN DE VAPOR AMBIENTE (Kpa)</span></div><div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-5_c5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div><i data-lucide="chevron-down" class="chevron"></i></div><div class="card-body" id="body-packing-5_c5"><div class="table-scroll"><table class="table-field-style"><thead><tr><th class="b-left">N°</th><th><i data-lucide="download"></i><br>RECEP.</th><th><i data-lucide="log-in"></i><br>IN. GAS.</th><th><i data-lucide="log-out"></i><br>SAL. GAS.</th><th><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th><th><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th><th class="b-right">ACCION</th></tr></thead><tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_packing_presion_c5">1</span></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_recepcion_c5" name="reg_packing_presion_recepcion_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_ingreso_gasificado_c5" name="reg_packing_presion_ingreso_gasificado_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_salida_gasificado_c5" name="reg_packing_presion_salida_gasificado_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_ingreso_prefrio_c5" name="reg_packing_presion_ingreso_prefrio_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_salida_prefrio_c5" name="reg_packing_presion_salida_prefrio_c5" placeholder="0.000"></td><td class="b-right"><button type="button" id="btn-add-packing-presion_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody><tbody id="tbody-packing-presion_c5"></tbody></table></div></div></div></div>
+                            <div id="wrapper_packing_6_c5" class="collapsible-wrapper"><div class="collapsible-card"><div class="card-header collapsible-toggle" data-target="body-packing-6_c5"><div class="header-info"><i data-lucide="apple"></i><span>PRESIÓN DE VAPOR FRUTA (Kpa)</span></div><div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-6_c5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div><i data-lucide="chevron-down" class="chevron"></i></div><div class="card-body" id="body-packing-6_c5"><div class="table-scroll"><table class="table-field-style"><thead><tr><th class="b-left">N°</th><th><i data-lucide="download"></i><br>RECEP.</th><th><i data-lucide="log-in"></i><br>IN. GAS.</th><th><i data-lucide="log-out"></i><br>SAL. GAS.</th><th><i data-lucide="thermometer-snowflake"></i><br>IN. PRE.</th><th><i data-lucide="thermometer-sun"></i><br>SAL. PRE.</th><th class="b-right">ACCION</th></tr></thead><tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_packing_presion_fruta_c5">1</span></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_fruta_recepcion_c5" name="reg_packing_presion_fruta_recepcion_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_fruta_ingreso_gasificado_c5" name="reg_packing_presion_fruta_ingreso_gasificado_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_fruta_salida_gasificado_c5" name="reg_packing_presion_fruta_salida_gasificado_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_fruta_ingreso_prefrio_c5" name="reg_packing_presion_fruta_ingreso_prefrio_c5" placeholder="0.000"></td><td><input type="number" step="0.001" min="0" id="reg_packing_presion_fruta_salida_prefrio_c5" name="reg_packing_presion_fruta_salida_prefrio_c5" placeholder="0.000"></td><td class="b-right"><button type="button" id="btn-add-packing-presion-fruta_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody><tbody id="tbody-packing-presion-fruta_c5"></tbody></table></div></div></div></div>
+                            <div id="wrapper_packing_8_c5" class="collapsible-wrapper"><div class="collapsible-card"><div class="card-header collapsible-toggle" data-target="body-packing-8_c5"><div class="header-info"><i data-lucide="sticky-note"></i><span>OBSERVACIONES POR MUESTRA</span></div><div class="thermoking-progress-wrap thermoking-progress-wrap--card" data-progress-root="body-packing-8_c5" role="presentation"><div class="thermoking-progress-track"><div class="thermoking-progress-fill" style="width:0%"></div></div><span class="thermoking-progress-label"></span></div><i data-lucide="chevron-down" class="chevron"></i></div><div class="card-body" id="body-packing-8_c5"><div class="table-scroll"><table class="table-field-style"><thead><tr><th class="b-left" style="width: 80px;">N°</th><th>DETALLE DE LA OBSERVACIÓN</th><th class="b-right" style="width: 80px;">ACCION</th></tr></thead><tbody><tr class="input-table-row"><td class="b-left"><span id="next_clam_packing_obs_c5">1</span></td><td><input type="text" id="reg_packing_obs_texto_c5" name="reg_packing_obs_texto_c5" placeholder="Escriba aquí la nota de la muestra (ej: # pallet)..."></td><td class="b-right"><button type="button" id="btn-add-packing-obs_c5" class="btn-mini-add"><i data-lucide="plus"></i></button></td></tr></tbody><tbody id="tbody-packing-obs_c5"></tbody></table></div></div></div></div>
                         </div>
                     </div>
                 </div>
@@ -1125,7 +1719,16 @@
     
     </main>
 
+    <div id="fullscreen-loader" class="fullscreen-loader" style="display: none;" aria-live="polite" aria-busy="true">
+        <div class="fullscreen-loader-card">
+            <span class="loading-spinner fullscreen-loader-spinner" aria-hidden="true"></span>
+            <p class="fullscreen-loader-text">Cargando registros...</p>
+        </div>
+    </div>
+
     <script src="librerias/sweetalert2.all.min.js"></script>
+    <!-- PDF.js: vista previa del PDF en modal en tablet/móvil (iframe+blob suele fallar en WebKit) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="librerias/lucide.min.js"></script>
     <!-- jsPDF: local para funcionar sin internet; si no existe, se carga desde CDN -->
     <script src="librerias/jspdf.umd.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';document.head.appendChild(s);"></script>
