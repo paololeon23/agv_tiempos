@@ -2896,6 +2896,35 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     .packing-native-time-wrap input[type="time"]::-webkit-calendar-picker-indicator {
         margin-left: 0;
     }
+    /* Móvil: truco texto→date/time (script.js); mismo tamaño que date/time nativos */
+    input[type="text"][data-native-input] {
+        color: #333;
+        -webkit-text-fill-color: #333;
+        background-color: #ffffff;
+        box-sizing: border-box;
+        font-size: max(16px, 1rem);
+        min-height: 36px;
+        line-height: 1.22;
+        width: 100%;
+    }
+    input[type="text"][data-native-input]::placeholder {
+        color: #6b7280;
+        opacity: 1;
+    }
+    .table-field-style input[type="text"][data-native-input],
+    .input-table-row input[type="text"][data-native-input],
+    .packing-native-time-wrap input[type="text"][data-native-input] {
+        color: #2b78c5;
+        -webkit-text-fill-color: #2b78c5;
+        min-height: 34px;
+        line-height: 1.15;
+    }
+    .table-field-style input[type="text"][data-native-input]::placeholder,
+    .input-table-row input[type="text"][data-native-input]::placeholder,
+    .packing-native-time-wrap input[type="text"][data-native-input]::placeholder {
+        color: #6b8ab0;
+        opacity: 1;
+    }
 }
 
 /* Filas ya ingresadas en packing: solo texto, sin inputs, para minimizar ancho */

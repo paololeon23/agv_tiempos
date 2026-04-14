@@ -298,9 +298,14 @@ function fechaLocalHoy() {
 function setNativeDateValue(el, isoDate, opts) {
     if (!el || !isoDate) return;
     var s = String(isoDate).trim();
+    if (el.getAttribute('data-native-input') === 'date' && el.type !== 'date') {
+        el.type = 'date';
+        el.placeholder = '';
+    }
     el.setAttribute('value', s);
     try { el.defaultValue = s; } catch (e) {}
     el.value = s;
+    try { syncMobileNativeDatetimeInput(el); } catch (e) {}
     if (opts && opts.silent) return;
     try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
     try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
@@ -309,11 +314,134 @@ function setNativeDateValue(el, isoDate, opts) {
 function setNativeTimeValue(el, hhmm) {
     if (!el || hhmm == null) return;
     var s = String(hhmm).trim();
+    if (el.getAttribute('data-native-input') === 'time' && el.type !== 'time') {
+        el.type = 'time';
+        el.placeholder = '';
+    }
     el.setAttribute('value', s);
     try { el.defaultValue = s; } catch (e) {}
     el.value = s;
+    try { syncMobileNativeDatetimeInput(el); } catch (e) {}
     try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
     try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+}
+
+/** Mismo breakpoint que style.css (móvil / pantalla pequeña). */
+var MOBILE_NATIVE_DT_MQ = '(max-width: 768px)';
+
+function isMobileNativeDatetimeLayout() {
+    return typeof window.matchMedia !== 'undefined' && window.matchMedia(MOBILE_NATIVE_DT_MQ).matches;
+}
+
+function shouldBindMobileNativeDatetime(el) {
+    if (!el || el.tagName !== 'INPUT') return false;
+    if (el.readOnly || el.disabled) return false;
+    if (!el.closest) return false;
+    if (el.closest('.swal2-container')) return false;
+    return true;
+}
+
+function getMobileDatetimePlaceholder(el, nativeType) {
+    var p = el.getAttribute('data-mobile-placeholder');
+    if (p) return p;
+    return nativeType === 'date' ? 'Seleccionar fecha' : 'Seleccionar hora';
+}
+
+/**
+ * En pantalla pequeña: si el campo está vacío, type="text" + placeholder (Chrome/Android muestran date/time en blanco).
+ * En escritorio: siempre type=date|time.
+ */
+function syncMobileNativeDatetimeInput(el) {
+    if (!el || !shouldBindMobileNativeDatetime(el)) return;
+    var native = el.getAttribute('data-native-input');
+    if (native !== 'date' && native !== 'time') return;
+    if (!isMobileNativeDatetimeLayout()) {
+        if (el.type !== native) el.type = native;
+        el.placeholder = '';
+        return;
+    }
+    var v = String(el.value || '').trim();
+    if (!v) {
+        el.type = 'text';
+        el.placeholder = getMobileDatetimePlaceholder(el, native);
+    } else {
+        el.type = native;
+        el.placeholder = '';
+    }
+}
+
+function onMobileNativeDtFocus(ev) {
+    var el = ev.target;
+    if (!el || el.tagName !== 'INPUT') return;
+    if (!shouldBindMobileNativeDatetime(el)) return;
+    var native = el.getAttribute('data-native-input');
+    if (native !== 'date' && native !== 'time') return;
+    if (!isMobileNativeDatetimeLayout()) return;
+    if (el.type === 'text') {
+        el.type = native;
+        el.placeholder = '';
+    }
+}
+
+function onMobileNativeDtBlur(ev) {
+    var el = ev.target;
+    if (!el || el.tagName !== 'INPUT') return;
+    if (!shouldBindMobileNativeDatetime(el)) return;
+    var native = el.getAttribute('data-native-input');
+    if (native !== 'date' && native !== 'time') return;
+    if (!isMobileNativeDatetimeLayout()) return;
+    if (!String(el.value || '').trim()) {
+        el.type = 'text';
+        el.placeholder = getMobileDatetimePlaceholder(el, native);
+    }
+}
+
+function bindMobileNativeDatetimeInputs(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var toBind = [];
+    scope.querySelectorAll('input[type="date"], input[type="time"]').forEach(function (el) {
+        if (shouldBindMobileNativeDatetime(el)) toBind.push(el);
+    });
+    scope.querySelectorAll('input[type="text"][data-native-input]').forEach(function (el) {
+        if (shouldBindMobileNativeDatetime(el)) toBind.push(el);
+    });
+    toBind.forEach(function (el) {
+        var native = el.getAttribute('data-native-input') || (el.type === 'date' ? 'date' : 'time');
+        el.setAttribute('data-native-input', native);
+        if (el.getAttribute('data-mobile-dt-bound') === '1') return;
+        el.setAttribute('data-mobile-dt-bound', '1');
+        el.addEventListener('focus', onMobileNativeDtFocus, true);
+        el.addEventListener('blur', onMobileNativeDtBlur, true);
+    });
+    toBind.forEach(function (el) {
+        var native = el.getAttribute('data-native-input');
+        if (native === 'date' || native === 'time') syncMobileNativeDatetimeInput(el);
+    });
+}
+
+var _mobileNativeDtMo = null;
+function initMobileNativeDatetimeObserver() {
+    if (_mobileNativeDtMo || typeof MutationObserver === 'undefined') return;
+    var t;
+    _mobileNativeDtMo = new MutationObserver(function () {
+        clearTimeout(t);
+        t = setTimeout(function () {
+            try { bindMobileNativeDatetimeInputs(document); } catch (e) {}
+        }, 80);
+    });
+    try {
+        _mobileNativeDtMo.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {}
+    if (window.matchMedia) {
+        var mq = window.matchMedia(MOBILE_NATIVE_DT_MQ);
+        var mqHandler = function () {
+            try {
+                document.querySelectorAll('input[data-native-input]').forEach(syncMobileNativeDatetimeInput);
+            } catch (e) {}
+        };
+        if (mq.addEventListener) mq.addEventListener('change', mqHandler);
+        else if (mq.addListener) mq.addListener(mqHandler);
+    }
 }
 
 /** Valores visibles en móvil/tablet al cargar (módulos ES pueden ejecutarse después de DOMContentLoaded). */
@@ -388,6 +516,8 @@ function initApp() {
     window.formHasChanges = false;
     aplicarValoresFechaHoraPorDefecto();
     asegurarFechasMetaPackingVisibles();
+    bindMobileNativeDatetimeInputs(document);
+    initMobileNativeDatetimeObserver();
     if (window.lucide) lucide.createIcons();
 
     // Con internet: rellenar caché de GET (fechas, listado) para usarlos offline; al volver online sincronizar colas y refrescar caché
