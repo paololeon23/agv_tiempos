@@ -4601,35 +4601,8 @@ function initApp() {
         return false;
     }
 
-    function bloqueoEnvioPorLatencia_(tipoEnvio) {
-        if (!navigator.onLine) {
-            return {
-                bloquear: true,
-                titulo: 'Sin conexión',
-                texto: 'No hay conexión a internet. Intenta cuando vuelva la señal.'
-            };
-        }
-        var q = window.__tiemposNetQuality || null;
-        if (!q) return { bloquear: false };
-        // Rojo = offline real. En amarillo/verde no bloquear.
-        if (q.online === false) {
-            var latTxt = (q.latencyMs != null) ? (q.latencyMs + ' ms') : (q.text || 'sin conexión');
-            return {
-                bloquear: true,
-                titulo: 'Sin conexión',
-                texto: 'La red está en rojo (' + latTxt + '). Espera conexión para enviar ' + tipoEnvio + '.'
-            };
-        }
-        return { bloquear: false };
-    }
-
     if (btnGuardarPacking) {
         btnGuardarPacking.addEventListener('click', async () => {
-            var bloqueNetPacking = bloqueoEnvioPorLatencia_('Packing');
-            if (bloqueNetPacking.bloquear) {
-                Swal.fire({ title: bloqueNetPacking.titulo, text: bloqueNetPacking.texto, icon: 'warning', confirmButtonColor: '#2f7cc0' });
-                return;
-            }
             if (packingBloqueadoParaActual) {
                 Swal.fire({
                     title: 'Ya trabajado',
@@ -9369,11 +9342,6 @@ function initApp() {
         btnGuardarGeneral.addEventListener('click', async () => {
             if (isSaving) return;
             if (Date.now() - lastSaveAt < COOLDOWN_MS) return;
-            var bloqueNetCampo = bloqueoEnvioPorLatencia_('Campo');
-            if (bloqueNetCampo.bloquear) {
-                Swal.fire({ title: bloqueNetCampo.titulo, text: bloqueNetCampo.texto, icon: 'warning', confirmButtonColor: '#2f7cc0' });
-                return;
-            }
             toggleSaving(true);
 
             const form = document.getElementById('cosecha-form');

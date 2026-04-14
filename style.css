@@ -390,57 +390,6 @@ header {
     justify-content: space-between;
 }
 
-.header-center {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    text-align: center;
-}
-
-.header-center h1 {
-    margin: 0;
-}
-
-.latency-live {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    width: min(100%, 280px);
-    min-height: 30px;
-    padding: 5px 14px;
-    border-radius: 8px;
-    border: 1px solid #cfd8e3;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-    color: #475569;
-    font-size: 0.8rem;
-    font-weight: 700;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-}
-.latency-live.latency-good {
-    background: #e8f5e9;
-    border-color: #81c784;
-    color: #1b5e20;
-}
-.latency-live.latency-warn {
-    background: #fff8e1;
-    border-color: #ffcc80;
-    color: #e65100;
-}
-.latency-live.latency-bad {
-    background: #ffebee;
-    border-color: #ef9a9a;
-    color: #b71c1c;
-}
-.latency-live.latency-unknown {
-    background: #f1f5f9;
-    border-color: #cbd5e1;
-    color: #475569;
-}
-
 /* INTERN ESTILOS*/
 
 .status-card {
@@ -2730,11 +2679,6 @@ label .lucide {
     }
     header h1 { 
         font-size: 1.4rem; 
-    }
-    .latency-live {
-        width: min(100%, 250px);
-        font-size: 0.72rem;
-        padding: 4px 10px;
     }
 }
 

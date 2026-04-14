@@ -6,93 +6,10 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwdC1lwuGNT01xfLE_0jI31
 /** Máximo de ítems ya procesados (subido/rechazado) a conservar; los más antiguos se borran. Los pendientes siempre se conservan. */
 const MAX_REGISTRO_HISTORIAL = 80;
 const MAX_PACKING_HISTORIAL = 50;
-const LATENCIA_PING_INTERVAL_MS = 10000;
-const LATENCIA_PING_TIMEOUT_MS = 4500;
-const LATENCIA_UMBRAL_VERDE_MS = 700;
-const LATENCIA_UMBRAL_AMARILLO_MS = 1600;
 
 let isSyncing = false;
 let isSyncingPacking = false;
 let retryTimeoutId = null;
-let latencyTimerId = null;
-let latencyPollInFlight = false;
-let lastLatencyState = { level: 'unknown', text: 'Nivel de internet: --', latencyMs: null, online: typeof navigator !== 'undefined' ? navigator.onLine : true };
-
-function publishLatencyState(state) {
-    lastLatencyState = state;
-    try { window.__tiemposNetQuality = state; } catch (_) {}
-    try { window.dispatchEvent(new CustomEvent('tiemposNetQualityUpdated', { detail: state })); } catch (_) {}
-}
-
-function aplicarUiLatencia(state) {
-    const el = document.getElementById('latency-live');
-    const textEl = document.getElementById('latency-live-text');
-    if (!el || !textEl) {
-        publishLatencyState(state);
-        return;
-    }
-    el.classList.remove('latency-good', 'latency-warn', 'latency-bad', 'latency-unknown');
-    if (state.level === 'good') el.classList.add('latency-good');
-    else if (state.level === 'warn') el.classList.add('latency-warn');
-    else if (state.level === 'bad') el.classList.add('latency-bad');
-    else el.classList.add('latency-unknown');
-    textEl.textContent = state.text;
-    if (state.level === 'bad') el.title = 'Red inestable o lenta. No es recomendable enviar.';
-    else if (state.level === 'warn') el.title = 'Red intermedia. Puedes enviar, pero puede tardar.';
-    else if (state.level === 'good') el.title = 'Red estable para enviar.';
-    else el.title = 'Midiendo latencia...';
-    publishLatencyState(state);
-}
-
-async function medirLatenciaUnaVez() {
-    if (latencyPollInFlight) return;
-    latencyPollInFlight = true;
-    try {
-        if (!navigator.onLine) {
-            aplicarUiLatencia({ level: 'bad', text: 'Nivel de internet: Sin conexión', latencyMs: null, online: false });
-            return;
-        }
-        const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        let timeoutId = null;
-        if (controller) {
-            timeoutId = setTimeout(() => {
-                try { controller.abort(); } catch (_) {}
-            }, LATENCIA_PING_TIMEOUT_MS);
-        }
-        try {
-            await fetch(API_URL + '?ping=1&t=' + Date.now(), {
-                method: 'GET',
-                mode: 'no-cors',
-                cache: 'no-store',
-                signal: controller ? controller.signal : undefined
-            });
-            const end = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-            const ms = Math.max(0, Math.round(end - start));
-            if (ms <= LATENCIA_UMBRAL_VERDE_MS) {
-                aplicarUiLatencia({ level: 'good', text: 'Nivel de internet: Bueno', latencyMs: ms, online: true });
-            } else if (ms <= LATENCIA_UMBRAL_AMARILLO_MS) {
-                aplicarUiLatencia({ level: 'warn', text: 'Nivel de internet: Intermedio', latencyMs: ms, online: true });
-            } else {
-                // Online pero lenta: amarillo (rojo solo offline real).
-                aplicarUiLatencia({ level: 'warn', text: 'Nivel de internet: Intermedio', latencyMs: ms, online: true });
-            }
-        } catch (_) {
-            // Puede fallar un ping puntual aun con internet; mantener amarillo.
-            aplicarUiLatencia({ level: 'warn', text: 'Nivel de internet: Intermedio', latencyMs: null, online: true });
-        } finally {
-            if (timeoutId) clearTimeout(timeoutId);
-        }
-    } finally {
-        latencyPollInFlight = false;
-    }
-}
-
-function ensureLatencyMonitor() {
-    if (latencyTimerId) return;
-    medirLatenciaUnaVez();
-    latencyTimerId = setInterval(medirLatenciaUnaVez, LATENCIA_PING_INTERVAL_MS);
-}
 
 /** Recorta la cola de registro: mantiene todos los pendientes y solo los últimos MAX_REGISTRO_HISTORIAL ya procesados (subido/rechazado). */
 function trimRegistroQueue() {
@@ -253,8 +170,6 @@ export function updateUI() {
     try {
         window.dispatchEvent(new CustomEvent('tiemposStorageUpdated'));
     } catch (e) {}
-    ensureLatencyMonitor();
-    medirLatenciaUnaVez();
 }
 
 // Si hay pendientes (registro o packing) y estamos online, reintentar en 12 s por si la conexión falló
