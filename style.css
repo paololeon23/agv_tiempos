@@ -2984,9 +2984,8 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     .table-field-style input[type="time"].time-ghost-empty:focus,
     .input-table-row input[type="time"].time-ghost-empty:focus,
     .packing-native-time-wrap input[type="time"].time-ghost-empty:focus {
-        color: #2b78c5 !important;
-        -webkit-text-fill-color: #2b78c5 !important;
-        background-image: none;
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
     }
     /* Móvil: truco texto→date/time (script.js); mismo tamaño que date/time nativos */
     input[type="text"][data-native-input] {

@@ -558,7 +558,7 @@ function bindMobileTimeGhostPlaceholders(root) {
     targets.forEach(function (el) {
         if (el.getAttribute('data-time-ghost-bound') !== '1') {
             el.setAttribute('data-time-ghost-bound', '1');
-            el.addEventListener('focus', function () { el.classList.remove('time-ghost-empty'); }, true);
+            el.addEventListener('focus', function () { syncGhost(el); }, true);
             el.addEventListener('blur', function () { syncGhost(el); }, true);
             el.addEventListener('input', function () { syncGhost(el); }, true);
             el.addEventListener('change', function () { syncGhost(el); }, true);
