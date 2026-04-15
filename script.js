@@ -333,11 +333,8 @@ function isMobileNativeDatetimeLayout() {
     return typeof window.matchMedia !== 'undefined' && window.matchMedia(MOBILE_NATIVE_DT_MQ).matches;
 }
 
-/**
- * Fecha/hora dentro de tablas o .packing-native-time-wrap: siempre control nativo (sin placeholder "Seleccionar…").
- * El truco texto→date/time solo aplica a cabeceras / formulario principal fuera de esos bloques.
- */
-function isNativeDatetimeInsideExcludedWrapper(el) {
+/** Hora dentro de tablas/wraps: placeholder corto para no ensanchar celdas en móvil. */
+function isNativeDatetimeInsideCompactTimeArea(el) {
     if (!el || !el.closest) return false;
     if (el.closest('.table-field-style')) return true;
     if (el.closest('.packing-native-time-wrap')) return true;
@@ -349,13 +346,13 @@ function shouldBindMobileNativeDatetime(el) {
     if (el.readOnly || el.disabled) return false;
     if (!el.closest) return false;
     if (el.closest('.swal2-container')) return false;
-    if (isNativeDatetimeInsideExcludedWrapper(el)) return false;
     return true;
 }
 
 function getMobileDatetimePlaceholder(el, nativeType) {
     var p = el.getAttribute('data-mobile-placeholder');
     if (p) return p;
+    if (nativeType === 'time' && isNativeDatetimeInsideCompactTimeArea(el)) return '';
     return nativeType === 'date' ? 'Seleccionar fecha' : 'Seleccionar hora';
 }
 
@@ -370,9 +367,16 @@ function syncMobileNativeDatetimeInput(el) {
     if (!isMobileNativeDatetimeLayout()) {
         if (el.type !== native) el.type = native;
         el.placeholder = '';
+        el.removeAttribute('data-compact-time-empty');
         return;
     }
     var v = String(el.value || '').trim();
+    if (native === 'time' && isNativeDatetimeInsideCompactTimeArea(el)) {
+        if (!v) el.setAttribute('data-compact-time-empty', '1');
+        else el.removeAttribute('data-compact-time-empty');
+    } else {
+        el.removeAttribute('data-compact-time-empty');
+    }
     if (!v) {
         el.type = 'text';
         el.placeholder = getMobileDatetimePlaceholder(el, native);
@@ -382,6 +386,47 @@ function syncMobileNativeDatetimeInput(el) {
     }
 }
 
+function abrirPickerHoraCompacto(el) {
+    if (!el) return;
+    if (el.getAttribute('data-compact-time-opening') === '1') return;
+    el.setAttribute('data-compact-time-opening', '1');
+    el.type = 'time';
+    el.placeholder = '';
+    try { el.focus(); } catch (e) {}
+    setTimeout(function () {
+        if (typeof el.showPicker === 'function') {
+            try { el.showPicker(); } catch (e2) {}
+        }
+    }, 0);
+    setTimeout(function () { el.removeAttribute('data-compact-time-opening'); }, 180);
+}
+
+function onMobileNativeDtPointerDown(ev) {
+    var el = ev.target;
+    if (!el || el.tagName !== 'INPUT') return;
+    if (!shouldBindMobileNativeDatetime(el)) return;
+    var native = el.getAttribute('data-native-input');
+    if (native !== 'time') return;
+    if (!isMobileNativeDatetimeLayout()) return;
+    if (!isNativeDatetimeInsideCompactTimeArea(el)) return;
+    if (el.type !== 'text') return;
+    ev.preventDefault();
+    abrirPickerHoraCompacto(el);
+}
+
+function onMobileNativeDtTouchStart(ev) {
+    var el = ev.target;
+    if (!el || el.tagName !== 'INPUT') return;
+    if (!shouldBindMobileNativeDatetime(el)) return;
+    var native = el.getAttribute('data-native-input');
+    if (native !== 'time') return;
+    if (!isMobileNativeDatetimeLayout()) return;
+    if (!isNativeDatetimeInsideCompactTimeArea(el)) return;
+    if (el.type !== 'text') return;
+    ev.preventDefault();
+    abrirPickerHoraCompacto(el);
+}
+
 function onMobileNativeDtFocus(ev) {
     var el = ev.target;
     if (!el || el.tagName !== 'INPUT') return;
@@ -389,6 +434,7 @@ function onMobileNativeDtFocus(ev) {
     var native = el.getAttribute('data-native-input');
     if (native !== 'date' && native !== 'time') return;
     if (!isMobileNativeDatetimeLayout()) return;
+    if (native === 'time' && isNativeDatetimeInsideCompactTimeArea(el) && !String(el.value || '').trim()) return;
     if (el.type === 'text') {
         el.type = native;
         el.placeholder = '';
@@ -406,20 +452,11 @@ function onMobileNativeDtBlur(ev) {
         el.type = 'text';
         el.placeholder = getMobileDatetimePlaceholder(el, native);
     }
+    try { syncMobileNativeDatetimeInput(el); } catch (e) {}
 }
 
 function bindMobileNativeDatetimeInputs(root) {
     var scope = root && root.querySelectorAll ? root : document;
-    /* Quitar truco texto en tablas/wraps (p. ej. tras cambiar de reglas o hot reload). */
-    scope.querySelectorAll('input[type="text"][data-native-input]').forEach(function (el) {
-        if (!isNativeDatetimeInsideExcludedWrapper(el)) return;
-        var native = el.getAttribute('data-native-input');
-        el.removeAttribute('data-native-input');
-        el.removeAttribute('data-mobile-dt-bound');
-        el.placeholder = '';
-        if (native === 'date') el.type = 'date';
-        else if (native === 'time') el.type = 'time';
-    });
     var toBind = [];
     scope.querySelectorAll('input[type="date"], input[type="time"]').forEach(function (el) {
         if (shouldBindMobileNativeDatetime(el)) toBind.push(el);
@@ -432,6 +469,8 @@ function bindMobileNativeDatetimeInputs(root) {
         el.setAttribute('data-native-input', native);
         if (el.getAttribute('data-mobile-dt-bound') === '1') return;
         el.setAttribute('data-mobile-dt-bound', '1');
+        el.addEventListener('pointerdown', onMobileNativeDtPointerDown, true);
+        el.addEventListener('touchstart', onMobileNativeDtTouchStart, { capture: true, passive: false });
         el.addEventListener('focus', onMobileNativeDtFocus, true);
         el.addEventListener('blur', onMobileNativeDtBlur, true);
     });
