@@ -314,7 +314,7 @@ function setNativeDateValue(el, isoDate, opts) {
 function setNativeTimeValue(el, hhmm) {
     if (!el || hhmm == null) return;
     var s = String(hhmm).trim();
-    if (el.getAttribute('data-native-input') === 'time' && el.type !== 'time') {
+    if (el.getAttribute('data-native-input') === 'time' && el.type !== 'time' && !(isMobileNativeDatetimeLayout() && isNativeDatetimeInsideCompactTimeArea(el))) {
         el.type = 'time';
         el.placeholder = '';
     }
@@ -346,6 +346,7 @@ function shouldBindMobileNativeDatetime(el) {
     if (el.readOnly || el.disabled) return false;
     if (!el.closest) return false;
     if (el.closest('.swal2-container')) return false;
+    if (isNativeDatetimeInsideCompactTimeArea(el)) return false;
     return true;
 }
 
@@ -364,6 +365,13 @@ function syncMobileNativeDatetimeInput(el) {
     if (!el || !shouldBindMobileNativeDatetime(el)) return;
     var native = el.getAttribute('data-native-input');
     if (native !== 'date' && native !== 'time') return;
+    if (native === 'time') {
+        el.readOnly = false;
+        el.type = 'time';
+        el.placeholder = '';
+        el.removeAttribute('data-compact-time-empty');
+        return;
+    }
     if (!isMobileNativeDatetimeLayout()) {
         if (el.type !== native) el.type = native;
         el.placeholder = '';
@@ -372,9 +380,15 @@ function syncMobileNativeDatetimeInput(el) {
     }
     var v = String(el.value || '').trim();
     if (native === 'time' && isNativeDatetimeInsideCompactTimeArea(el)) {
+        el.readOnly = true;
         if (!v) el.setAttribute('data-compact-time-empty', '1');
         else el.removeAttribute('data-compact-time-empty');
+        /* En áreas compactas: mantener SIEMPRE type=text para que no cambie tamaño al tocar. */
+        el.type = 'text';
+        el.placeholder = '';
+        return;
     } else {
+        el.readOnly = false;
         el.removeAttribute('data-compact-time-empty');
     }
     if (!v) {
@@ -392,26 +406,64 @@ function abrirPickerHoraCompacto(el) {
     el.setAttribute('data-compact-time-opening', '1');
     var scrollWrap = el.closest ? el.closest('.table-scroll') : null;
     var prevScrollLeft = scrollWrap ? scrollWrap.scrollLeft : 0;
+    var rect = null;
+    try { rect = el.getBoundingClientRect(); } catch (eRect) {}
+    if (rect) {
+        el.style.width = Math.max(0, Math.round(rect.width)) + 'px';
+        el.style.minWidth = Math.max(0, Math.round(rect.width)) + 'px';
+        el.style.maxWidth = Math.max(0, Math.round(rect.width)) + 'px';
+        el.style.height = Math.max(0, Math.round(rect.height)) + 'px';
+        el.style.minHeight = Math.max(0, Math.round(rect.height)) + 'px';
+        el.style.maxHeight = Math.max(0, Math.round(rect.height)) + 'px';
+    }
+    el.classList.add('compact-time-lock-open');
+    /* Abrir sobre el mismo input (más compatible en Android/iOS que un picker oculto). */
+    var prevVal = String(el.value || '').trim();
+    el.readOnly = false;
     el.type = 'time';
     el.placeholder = '';
     try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) {} }
     if (scrollWrap) {
         try { scrollWrap.scrollLeft = prevScrollLeft; } catch (e3) {}
     }
-    setTimeout(function () {
-        if (scrollWrap) {
-            try { scrollWrap.scrollLeft = prevScrollLeft; } catch (e4) {}
+    var synced = false;
+    var syncAndRestoreCompact = function () {
+        if (synced) return;
+        synced = true;
+        var newVal = String(el.value || '').trim();
+        if (!newVal && prevVal) {
+            el.value = prevVal;
+            el.setAttribute('value', prevVal);
+        } else if (newVal) {
+            el.setAttribute('value', newVal);
         }
-        if (typeof el.showPicker === 'function') {
-            try { el.showPicker(); } catch (e2) {}
-        }
-    }, 0);
+        try { syncMobileNativeDatetimeInput(el); } catch (eSync) {}
+    };
+    el.addEventListener('change', syncAndRestoreCompact, { once: true });
+    el.addEventListener('blur', syncAndRestoreCompact, { once: true });
+    if (scrollWrap) {
+        try { scrollWrap.scrollLeft = prevScrollLeft; } catch (e4) {}
+    }
+    try {
+        if (typeof el.showPicker === 'function') el.showPicker();
+        else el.click();
+    } catch (eOpen) {
+        try { el.click(); } catch (eClick) {}
+    }
     setTimeout(function () {
+        syncAndRestoreCompact();
+        el.classList.remove('compact-time-lock-open');
+        el.style.width = '';
+        el.style.minWidth = '';
+        el.style.maxWidth = '';
+        el.style.height = '';
+        el.style.minHeight = '';
+        el.style.maxHeight = '';
         if (scrollWrap) {
             try { scrollWrap.scrollLeft = prevScrollLeft; } catch (e5) {}
         }
-    }, 120);
-    setTimeout(function () { el.removeAttribute('data-compact-time-opening'); }, 180);
+    }, 900);
+    setTimeout(function () { el.removeAttribute('data-compact-time-opening'); }, 500);
 }
 
 function onMobileNativeDtPointerDown(ev) {
@@ -420,6 +472,8 @@ function onMobileNativeDtPointerDown(ev) {
     if (!shouldBindMobileNativeDatetime(el)) return;
     var native = el.getAttribute('data-native-input');
     if (native !== 'time') return;
+    /* Hora: comportamiento 100% nativo (sin interceptar). */
+    return;
     if (!isMobileNativeDatetimeLayout()) return;
     if (!isNativeDatetimeInsideCompactTimeArea(el)) return;
     if (el.type !== 'text') return;
@@ -433,11 +487,8 @@ function onMobileNativeDtTouchStart(ev) {
     if (!shouldBindMobileNativeDatetime(el)) return;
     var native = el.getAttribute('data-native-input');
     if (native !== 'time') return;
-    if (!isMobileNativeDatetimeLayout()) return;
-    if (!isNativeDatetimeInsideCompactTimeArea(el)) return;
-    if (el.type !== 'text') return;
-    ev.preventDefault();
-    abrirPickerHoraCompacto(el);
+    /* Hora: comportamiento 100% nativo (sin interceptar). */
+    return;
 }
 
 function onMobileNativeDtFocus(ev) {
@@ -446,8 +497,8 @@ function onMobileNativeDtFocus(ev) {
     if (!shouldBindMobileNativeDatetime(el)) return;
     var native = el.getAttribute('data-native-input');
     if (native !== 'date' && native !== 'time') return;
+    if (native === 'time') return;
     if (!isMobileNativeDatetimeLayout()) return;
-    if (native === 'time' && isNativeDatetimeInsideCompactTimeArea(el) && !String(el.value || '').trim()) return;
     if (el.type === 'text') {
         el.type = native;
         el.placeholder = '';
@@ -460,6 +511,7 @@ function onMobileNativeDtBlur(ev) {
     if (!shouldBindMobileNativeDatetime(el)) return;
     var native = el.getAttribute('data-native-input');
     if (native !== 'date' && native !== 'time') return;
+    if (native === 'time') return;
     if (!isMobileNativeDatetimeLayout()) return;
     if (!String(el.value || '').trim()) {
         el.type = 'text';
@@ -470,6 +522,18 @@ function onMobileNativeDtBlur(ev) {
 
 function bindMobileNativeDatetimeInputs(root) {
     var scope = root && root.querySelectorAll ? root : document;
+    /* Regreso a comportamiento nativo en áreas compactas (tablas/wrappers): abre siempre en 1 toque. */
+    scope.querySelectorAll('.table-field-style input[data-native-input], .packing-native-time-wrap input[data-native-input]').forEach(function (el) {
+        var native = el.getAttribute('data-native-input');
+        if (native === 'time' || native === 'date') {
+            el.readOnly = false;
+            el.type = native;
+            el.placeholder = '';
+        }
+        el.removeAttribute('data-compact-time-empty');
+        el.removeAttribute('data-mobile-dt-bound');
+        el.removeAttribute('data-native-input');
+    });
     var toBind = [];
     scope.querySelectorAll('input[type="date"], input[type="time"]').forEach(function (el) {
         if (shouldBindMobileNativeDatetime(el)) toBind.push(el);
