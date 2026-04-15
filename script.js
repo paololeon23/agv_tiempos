@@ -314,7 +314,7 @@ function setNativeDateValue(el, isoDate, opts) {
 function setNativeTimeValue(el, hhmm) {
     if (!el || hhmm == null) return;
     var s = String(hhmm).trim();
-    if (el.getAttribute('data-native-input') === 'time' && el.type !== 'time' && !(isMobileNativeDatetimeLayout() && isNativeDatetimeInsideCompactTimeArea(el))) {
+    if (el.type !== 'time') {
         el.type = 'time';
         el.placeholder = '';
     }
@@ -343,6 +343,7 @@ function isNativeDatetimeInsideCompactTimeArea(el) {
 
 function shouldBindMobileNativeDatetime(el) {
     if (!el || el.tagName !== 'INPUT') return false;
+    if (el.type === 'time') return false;
     if (el.readOnly || el.disabled) return false;
     if (!el.closest) return false;
     if (el.closest('.swal2-container')) return false;
@@ -353,7 +354,6 @@ function shouldBindMobileNativeDatetime(el) {
 function getMobileDatetimePlaceholder(el, nativeType) {
     var p = el.getAttribute('data-mobile-placeholder');
     if (p) return p;
-    if (nativeType === 'time' && isNativeDatetimeInsideCompactTimeArea(el)) return '';
     return nativeType === 'date' ? 'Seleccionar fecha' : 'Seleccionar hora';
 }
 
@@ -365,13 +365,6 @@ function syncMobileNativeDatetimeInput(el) {
     if (!el || !shouldBindMobileNativeDatetime(el)) return;
     var native = el.getAttribute('data-native-input');
     if (native !== 'date' && native !== 'time') return;
-    if (native === 'time') {
-        el.readOnly = false;
-        el.type = 'time';
-        el.placeholder = '';
-        el.removeAttribute('data-compact-time-empty');
-        return;
-    }
     if (!isMobileNativeDatetimeLayout()) {
         if (el.type !== native) el.type = native;
         el.placeholder = '';
@@ -379,18 +372,7 @@ function syncMobileNativeDatetimeInput(el) {
         return;
     }
     var v = String(el.value || '').trim();
-    if (native === 'time' && isNativeDatetimeInsideCompactTimeArea(el)) {
-        el.readOnly = true;
-        if (!v) el.setAttribute('data-compact-time-empty', '1');
-        else el.removeAttribute('data-compact-time-empty');
-        /* En áreas compactas: mantener SIEMPRE type=text para que no cambie tamaño al tocar. */
-        el.type = 'text';
-        el.placeholder = '';
-        return;
-    } else {
-        el.readOnly = false;
-        el.removeAttribute('data-compact-time-empty');
-    }
+    el.removeAttribute('data-compact-time-empty');
     if (!v) {
         el.type = 'text';
         el.placeholder = getMobileDatetimePlaceholder(el, native);
@@ -555,6 +537,34 @@ function bindMobileNativeDatetimeInputs(root) {
         var native = el.getAttribute('data-native-input');
         if (native === 'date' || native === 'time') syncMobileNativeDatetimeInput(el);
     });
+    try { bindMobileTimeGhostPlaceholders(scope); } catch (eGhost) {}
+}
+
+function bindMobileTimeGhostPlaceholders(root) {
+    if (!isMobileNativeDatetimeLayout()) return;
+    var scope = root && root.querySelectorAll ? root : document;
+    var targets = scope.querySelectorAll(
+        '.table-field-style input[type="time"], .input-table-row input[type="time"], .packing-native-time-wrap input[type="time"]'
+    );
+    var syncGhost = function (el) {
+        if (!el) return;
+        if (el === document.activeElement) {
+            el.classList.remove('time-ghost-empty');
+            return;
+        }
+        if (String(el.value || '').trim()) el.classList.remove('time-ghost-empty');
+        else el.classList.add('time-ghost-empty');
+    };
+    targets.forEach(function (el) {
+        if (el.getAttribute('data-time-ghost-bound') !== '1') {
+            el.setAttribute('data-time-ghost-bound', '1');
+            el.addEventListener('focus', function () { el.classList.remove('time-ghost-empty'); }, true);
+            el.addEventListener('blur', function () { syncGhost(el); }, true);
+            el.addEventListener('input', function () { syncGhost(el); }, true);
+            el.addEventListener('change', function () { syncGhost(el); }, true);
+        }
+        syncGhost(el);
+    });
 }
 
 var _mobileNativeDtMo = null;
@@ -575,6 +585,7 @@ function initMobileNativeDatetimeObserver() {
         var mqHandler = function () {
             try {
                 document.querySelectorAll('input[data-native-input]').forEach(syncMobileNativeDatetimeInput);
+                bindMobileTimeGhostPlaceholders(document);
             } catch (e) {}
         };
         if (mq.addEventListener) mq.addEventListener('change', mqHandler);

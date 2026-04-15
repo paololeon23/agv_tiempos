@@ -2872,7 +2872,12 @@ input[type="time"]::-webkit-calendar-picker-indicator {
         -webkit-overflow-scrolling: touch;
     }
     .table-field-style {
+        table-layout: fixed;
         min-width: 620px;
+    }
+    .table-field-style th,
+    .table-field-style td {
+        min-width: 74px;
     }
     input[type="date"],
     input[type="time"] {
@@ -2887,7 +2892,10 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     .table-field-style input[type="time"],
     .input-table-row input[type="time"],
     .packing-native-time-wrap input[type="time"] {
+        width: 100%;
         min-height: 34px;
+        height: 34px;
+        max-height: 34px;
         line-height: 1.15;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
@@ -2935,6 +2943,50 @@ input[type="time"]::-webkit-calendar-picker-indicator {
         border-color: #2f7cc0 !important;
         box-shadow: 0 0 0 2px rgba(47, 124, 192, 0.18);
         background-color: #f8fbff !important;
+    }
+    /* Placeholder visual fijo para hora vacía (sin alterar el valor real). */
+    .table-field-style input[type="time"].time-ghost-empty,
+    .input-table-row input[type="time"].time-ghost-empty,
+    .packing-native-time-wrap input[type="time"].time-ghost-empty {
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+        text-shadow: none !important;
+        text-align: center !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='110' height='22' viewBox='0 0 110 22'%3E%3Ctext x='46' y='15' text-anchor='middle' font-family='Segoe UI, Arial, sans-serif' font-size='13' font-weight='700' fill='%235b89b9'%3E00:00%3C/text%3E%3Ccircle cx='78' cy='11' r='7' fill='none' stroke='%23364455' stroke-width='1.6'/%3E%3Cpath d='M78 7.8v3.6l2.4 1.4' stroke='%23364455' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: center center;
+        background-size: 92px 18px;
+    }
+    .table-field-style input[type="time"].time-ghost-empty::-webkit-calendar-picker-indicator,
+    .input-table-row input[type="time"].time-ghost-empty::-webkit-calendar-picker-indicator,
+    .packing-native-time-wrap input[type="time"].time-ghost-empty::-webkit-calendar-picker-indicator {
+        opacity: 0 !important;
+        width: 0 !important;
+        margin: 0 !important;
+    }
+    .table-field-style input[type="time"].time-ghost-empty::-webkit-datetime-edit,
+    .input-table-row input[type="time"].time-ghost-empty::-webkit-datetime-edit,
+    .packing-native-time-wrap input[type="time"].time-ghost-empty::-webkit-datetime-edit,
+    .table-field-style input[type="time"].time-ghost-empty::-webkit-datetime-edit-fields-wrapper,
+    .input-table-row input[type="time"].time-ghost-empty::-webkit-datetime-edit-fields-wrapper,
+    .packing-native-time-wrap input[type="time"].time-ghost-empty::-webkit-datetime-edit-fields-wrapper,
+    .table-field-style input[type="time"].time-ghost-empty::-webkit-datetime-edit-hour-field,
+    .table-field-style input[type="time"].time-ghost-empty::-webkit-datetime-edit-minute-field,
+    .input-table-row input[type="time"].time-ghost-empty::-webkit-datetime-edit-hour-field,
+    .input-table-row input[type="time"].time-ghost-empty::-webkit-datetime-edit-minute-field,
+    .packing-native-time-wrap input[type="time"].time-ghost-empty::-webkit-datetime-edit-hour-field,
+    .packing-native-time-wrap input[type="time"].time-ghost-empty::-webkit-datetime-edit-minute-field {
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+    }
+    .table-field-style input[type="time"].time-ghost-empty:focus,
+    .input-table-row input[type="time"].time-ghost-empty:focus,
+    .packing-native-time-wrap input[type="time"].time-ghost-empty:focus {
+        color: #2b78c5 !important;
+        -webkit-text-fill-color: #2b78c5 !important;
+        background-image: none;
     }
     /* Móvil: truco texto→date/time (script.js); mismo tamaño que date/time nativos */
     input[type="text"][data-native-input] {
