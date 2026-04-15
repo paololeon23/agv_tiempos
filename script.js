@@ -51,9 +51,7 @@ function renderPdfEnModal(blobUrl, popup) {
         ponerIframe();
         return;
     }
-    try {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    } catch (e) {}
+    /* Offline-friendly: evitar dependencia del worker remoto (CDN) en móviles sin internet. */
 
     var box = popup && popup.querySelector ? popup.querySelector('.swal2-popup') : null;
     var maxW = Math.min(880, (box && box.clientWidth) ? box.clientWidth - 32 : 600);
@@ -149,10 +147,17 @@ function renderPdfEnModal(blobUrl, popup) {
         return renderAll;
     }
 
+    function cargarPdfSinWorker(buf) {
+        return pdfjsLib.getDocument({
+            data: buf,
+            disableWorker: true
+        }).promise;
+    }
+
     fetch(blobUrl)
         .then(function (r) { return r.arrayBuffer(); })
         .then(function (buf) {
-            return pdfjsLib.getDocument({ data: buf }).promise;
+            return cargarPdfSinWorker(buf);
         })
         .then(function (pdf) {
             state.pdf = pdf;
@@ -326,8 +331,8 @@ function setNativeTimeValue(el, hhmm) {
     try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
 }
 
-/** Mismo breakpoint que style.css (móvil / pantalla pequeña). */
-var MOBILE_NATIVE_DT_MQ = '(max-width: 768px)';
+/** Solo celular real; en tablet/escritorio mantener comportamiento nativo directo. */
+var MOBILE_NATIVE_DT_MQ = '(max-width: 600px)';
 
 function isMobileNativeDatetimeLayout() {
     return typeof window.matchMedia !== 'undefined' && window.matchMedia(MOBILE_NATIVE_DT_MQ).matches;
@@ -548,6 +553,10 @@ function bindMobileTimeGhostPlaceholders(root) {
     );
     var syncGhost = function (el) {
         if (!el) return;
+        if (el === document.activeElement) {
+            el.classList.remove('time-ghost-empty');
+            return;
+        }
         if (String(el.value || '').trim()) el.classList.remove('time-ghost-empty');
         else el.classList.add('time-ghost-empty');
     };
@@ -606,7 +615,9 @@ function aplicarValoresFechaHoraPorDefecto() {
     var viewFechaRc5 = document.getElementById('view_fecha_rc5');
     if (viewFechaRc5 && !String(viewFechaRc5.value || '').trim()) setNativeDateValue(viewFechaRc5, hoy);
     var regHoraIni = document.getElementById('reg_hora_inicio');
-    if (regHoraIni && !String(regHoraIni.value || '').trim()) setNativeTimeValue(regHoraIni, '07:15');
+    if (regHoraIni && !String(regHoraIni.value || '').trim()) {
+        try { regHoraIni.value = ''; } catch (e) {}
+    }
     var regResp = document.getElementById('reg_responsable');
     if (regResp && !String(regResp.value || '').trim()) regResp.value = RESPONSABLE_CAMPO_PREDETERMINADO;
 }
@@ -1882,7 +1893,7 @@ function initApp() {
             set('reg_variedad', h.variedad);
             set('reg_placa', h.placa);
             var hi = document.getElementById('reg_hora_inicio');
-            if (hi) setNativeTimeValue(hi, h.hora_inicio || '07:15');
+            if (hi) setNativeTimeValue(hi, h.hora_inicio || '');
             set('reg_dias_precosecha', h.dias_precosecha);
             set('reg_traz_libre', h.traz_libre);
             set('reg_fundo', normalizarValorFundoSelect(h.fundo));
@@ -1898,7 +1909,7 @@ function initApp() {
             set('reg_variedad', '');
             set('reg_placa', '');
             var hi2 = document.getElementById('reg_hora_inicio');
-            if (hi2) setNativeTimeValue(hi2, '07:15');
+            if (hi2) setNativeTimeValue(hi2, '');
             set('reg_dias_precosecha', '');
             set('reg_traz_libre', '');
             set('reg_fundo', '');
@@ -2221,9 +2232,66 @@ function initApp() {
                 selEnsayoPacking.value = prev;
                 currentEnsayoPacking = prev;
                 currentFechaPacking = fe;
+                aplicarSeedPruebasPackingSiVacio(fe, prev);
             }
         }
         syncFechaEnsayoEspejoDesdePrimario();
+    }
+
+    /**
+     * Seed de pruebas para Formato Packing.
+     * Modo pruebas actual: aplicar SIEMPRE al elegir/restaurar fecha+ensayo (sobrescribe en memoria local).
+     * Se puede desactivar poniendo window.__MTTP_SEED_PACKING__ = false.
+     */
+    function aplicarSeedPruebasPackingSiVacio(fecha, ensayo) {
+        if (window.__MTTP_SEED_PACKING__ === false) return;
+        if (!fecha || !ensayo) return;
+
+        maxFilasPacking = Math.max(maxFilasPacking, 2);
+
+        datosPacking.packing1 = [
+            { recepcion: '10:20', ingreso_gasificado: '10:25', salida_gasificado: '10:30', ingreso_prefrio: '10:35', salida_prefrio: '10:40' },
+            { recepcion: '10:45', ingreso_gasificado: '10:50', salida_gasificado: '10:55', ingreso_prefrio: '11:00', salida_prefrio: '11:05' }
+        ];
+        datosPacking.packing2 = [
+            /* Debe ser <= salida de campo (seed campo: 100g y 98g). */
+            { peso_recepcion: '98', peso_ingreso_gasificado: '97', peso_salida_gasificado: '96', peso_ingreso_prefrio: '95', peso_salida_prefrio: '94' },
+            { peso_recepcion: '96', peso_ingreso_gasificado: '95', peso_salida_gasificado: '94', peso_ingreso_prefrio: '93', peso_salida_prefrio: '92' }
+        ];
+        datosPacking.packing3 = [
+            /* Escenario realista: sol en recepción y descenso hacia prefrío. */
+            { t_amb_recep: '30.8', t_pulp_recep: '24.5', t_amb_ing: '27.2', t_pulp_ing: '21.3', t_amb_sal: '22.6', t_pulp_sal: '17.8', t_amb_pre_in: '10.4', t_pulp_pre_in: '8.9', t_amb_pre_out: '5.8', t_pulp_pre_out: '5.0' },
+            { t_amb_recep: '30.1', t_pulp_recep: '23.9', t_amb_ing: '26.5', t_pulp_ing: '20.8', t_amb_sal: '21.9', t_pulp_sal: '17.2', t_amb_pre_in: '9.8', t_pulp_pre_in: '8.3', t_amb_pre_out: '5.4', t_pulp_pre_out: '4.7' }
+        ];
+        datosPacking.packing4 = [
+            { recepcion: '85', ingreso_gasificado: '84', salida_gasificado: '83', ingreso_prefrio: '82', salida_prefrio: '81' },
+            { recepcion: '84', ingreso_gasificado: '83', salida_gasificado: '82', ingreso_prefrio: '81', salida_prefrio: '80' }
+        ];
+        datosPacking.packing5 = [
+            { recepcion: '2.301', ingreso_gasificado: '2.299', salida_gasificado: '2.295', ingreso_prefrio: '2.291', salida_prefrio: '2.287' },
+            { recepcion: '2.300', ingreso_gasificado: '2.298', salida_gasificado: '2.294', ingreso_prefrio: '2.290', salida_prefrio: '2.286' }
+        ];
+        datosPacking.packing6 = [
+            { recepcion: '1.201', ingreso_gasificado: '1.198', salida_gasificado: '1.195', ingreso_prefrio: '1.192', salida_prefrio: '1.189' },
+            { recepcion: '1.200', ingreso_gasificado: '1.197', salida_gasificado: '1.194', ingreso_prefrio: '1.191', salida_prefrio: '1.188' }
+        ];
+        datosPacking.packing8 = [
+            { observacion: 'Observación prueba packing 1' },
+            { observacion: 'Observación prueba packing 2' }
+        ];
+
+        var horaRecep = document.getElementById('view_hora_recepcion');
+        if (horaRecep && !String(horaRecep.value || '').trim()) setNativeTimeValue(horaRecep, '10:20');
+        var nroViaje = document.getElementById('view_n_viaje');
+        if (nroViaje && !String(nroViaje.value || '').trim()) nroViaje.value = '1';
+        var fechaIns = document.getElementById('view_fecha_inspeccion');
+        if (fechaIns && !String(fechaIns.value || '').trim()) setNativeDateValue(fechaIns, fechaLocalHoy(), { silent: true });
+        var respPk = document.getElementById('view_responsable');
+        if (respPk && !String(respPk.value || '').trim()) respPk.value = RESPONSABLE_CAMPO_PREDETERMINADO;
+
+        renderAllPackingRows();
+        actualizarTodosContadoresPacking();
+        guardarPackingEnStore(fecha, ensayo);
     }
 
     function setSpinnersCargandoEnsayos(visible) {
@@ -2324,6 +2392,7 @@ function initApp() {
             if (fecha && newEnsayo) {
                 /* Como Campo (cambio de rótulo): solo cambiar contexto y borrador del ensayo. No vaciar vista de hoja aquí; eso solo aplica al cambiar fecha o al usar «Cargar datos». */
                 restaurarPackingDesdeStore(fecha, newEnsayo);
+                aplicarSeedPruebasPackingSiVacio(fecha, newEnsayo);
             }
             if (newEnsayo && datosEnsayos) {
                 var lenV = datosEnsayos.visual && datosEnsayos.visual[newEnsayo] && datosEnsayos.visual[newEnsayo].visual ? datosEnsayos.visual[newEnsayo].visual.length : 0;
@@ -2399,10 +2468,9 @@ function initApp() {
     var inputFechaInspeccion = document.getElementById('view_fecha_inspeccion');
     var inputResponsablePacking = document.getElementById('view_responsable');
     function syncPackingMetaInputsEstado() {
-        var selModo = document.getElementById('packing_modo_envio');
         var enFormatoPacking = currentSidebarView === 'formato-packing';
-        var modoActivo = enFormatoPacking ? getPackingModoEnvio() : '';
-        var bloquear = !enFormatoPacking || !selModo || selModo.disabled || !modoActivo;
+        /* FECHA_INSPECCION y RESPONSABLE son compartidos Packing/Thermo King y deben ser siempre editables en #formato-packing. */
+        var bloquear = !enFormatoPacking;
         if (inputFechaInspeccion) inputFechaInspeccion.disabled = bloquear;
         if (inputResponsablePacking) inputResponsablePacking.disabled = bloquear;
     }
@@ -8203,6 +8271,155 @@ function initApp() {
         }
     }
 
+    /**
+     * Datos de prueba para CAMPO (solo para tests rápidos).
+     * - Carga 2 filas por sección visual/acopio en Ensayo 1.
+     * - Solo se aplica si el ensayo está vacío.
+     * - Se puede desactivar poniendo window.__MTTP_SEED_CAMPO__ = false.
+     */
+    function aplicarSeedPruebasCampoSiVacio() {
+        if (window.__MTTP_SEED_CAMPO__ === false) return;
+        if (window.__mttpSeedCampoApplied === true) return;
+
+        function buildSeed() {
+            return {
+                formHeader: {
+                    fecha: fechaLocalHoy(),
+                    responsable: RESPONSABLE_CAMPO_PREDETERMINADO,
+                    guia_remision: '200416',
+                    variedad: '',
+                    placa: '9578-PK',
+                    hora_inicio: '10:00',
+                    dias_precosecha: '6, 29',
+                    traz_etapa: '',
+                    traz_campo: '',
+                    traz_libre: 'T4A',
+                    fundo: 'c5',
+                    observacion: 'Prueba campo'
+                },
+                visual: [
+                    { jarra: '1', p1: '100', p2: '100', llegada: '100', despacho: '100' },
+                    { jarra: '2', p1: '98', p2: '99', llegada: '99', despacho: '98' }
+                ],
+                jarras: [
+                    { jarra: '1', tipo: 'C', inicio: '10:15', termino: '10:20', tiempo: "5'" },
+                    { jarra: '1', tipo: 'T', inicio: '10:20', termino: '10:20', tiempo: "0'" }
+                ],
+                temperaturas: [
+                    { inicio_amb: '20.1', inicio_pul: '12.4', termino_amb: '20.3', termino_pul: '12.2', llegada_amb: '19.7', llegada_pul: '11.9', despacho_amb: '19.2', despacho_pul: '11.6' },
+                    { inicio_amb: '20.4', inicio_pul: '12.5', termino_amb: '20.1', termino_pul: '12.1', llegada_amb: '19.6', llegada_pul: '11.8', despacho_amb: '19.0', despacho_pul: '11.4' }
+                ],
+                tiempos: [
+                    { inicio: '10:15', perdida: '10:16', termino: '10:20', llegada: '10:25', despacho: '10:30' },
+                    { inicio: '10:20', perdida: '10:20', termino: '10:20', llegada: '10:25', despacho: '10:30' }
+                ],
+                humedad: [
+                    { inicio: '85', termino: '84', llegada: '83', despacho: '82' },
+                    { inicio: '84', termino: '83', llegada: '82', despacho: '81' }
+                ],
+                presionambiente: [
+                    { inicio: '2.301', termino: '2.299', llegada: '2.295', despacho: '2.290' },
+                    { inicio: '2.300', termino: '2.298', llegada: '2.294', despacho: '2.289' }
+                ],
+                presionfruta: [
+                    { inicio: '1.201', termino: '1.198', llegada: '1.194', despacho: '1.190' },
+                    { inicio: '1.200', termino: '1.197', llegada: '1.193', despacho: '1.189' }
+                ],
+                observacion: [
+                    { observacion: 'Muestra de prueba 1' },
+                    { observacion: 'Muestra de prueba 2' }
+                ]
+            };
+        }
+
+        var seededAlgo = false;
+        ['visual', 'acopio'].forEach(function (tipo) {
+            var bucket = datosEnsayos[tipo] && datosEnsayos[tipo][1];
+            if (!bucket) return;
+            var vacio = (!bucket.visual || bucket.visual.length === 0) &&
+                (!bucket.jarras || bucket.jarras.length === 0) &&
+                (!bucket.temperaturas || bucket.temperaturas.length === 0) &&
+                (!bucket.tiempos || bucket.tiempos.length === 0) &&
+                (!bucket.humedad || bucket.humedad.length === 0) &&
+                (!bucket.presionambiente || bucket.presionambiente.length === 0) &&
+                (!bucket.presionfruta || bucket.presionfruta.length === 0) &&
+                (!bucket.observacion || bucket.observacion.length === 0);
+            if (!vacio) return;
+            datosEnsayos[tipo][1] = buildSeed();
+            seededAlgo = true;
+        });
+
+        if (!seededAlgo) {
+            window.__mttpSeedCampoApplied = true;
+            return;
+        }
+
+        var setIfEmpty = function (id, val) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            if (String(el.value || '').trim()) return;
+            el.value = val;
+        };
+        var setFirstSelectOptionIfEmpty = function (id) {
+            var el = document.getElementById(id);
+            if (!el || el.tagName !== 'SELECT') return;
+            if (String(el.value || '').trim()) return;
+            for (var i = 0; i < el.options.length; i++) {
+                var op = el.options[i];
+                if (!op) continue;
+                if (op.disabled) continue;
+                var v = String(op.value || '').trim();
+                if (!v) continue;
+                el.value = v;
+                try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (eSel) {}
+                break;
+            }
+        };
+
+        setIfEmpty('reg_visual_n_jarra', '3');
+        setIfEmpty('reg_visual_peso_1', '100');
+        setIfEmpty('reg_visual_peso_2', '100');
+        setIfEmpty('reg_visual_llegada_acopio', '100');
+        setIfEmpty('reg_visual_despacho_acopio', '100');
+        setIfEmpty('reg_hora_inicio', '10:00');
+        setIfEmpty('reg_dias_precosecha', '6, 29');
+        setIfEmpty('reg_responsable', RESPONSABLE_CAMPO_PREDETERMINADO);
+        setIfEmpty('reg_guia_remision', '200416');
+        setIfEmpty('reg_placa', '9578-PK');
+        setIfEmpty('reg_traz_libre', 'T4A');
+        setIfEmpty('reg_observacion_formato', 'Prueba campo');
+        setIfEmpty('reg_jarras_tipo', 'C');
+        setIfEmpty('reg_jarras_inicio', '10:30');
+        setIfEmpty('reg_jarras_termino', '10:35');
+        setIfEmpty('reg_tiempos_inicio_c', '10:30');
+        setIfEmpty('reg_tiempos_perdida_peso', '10:31');
+        setIfEmpty('reg_tiempos_termino_c', '10:35');
+        setIfEmpty('reg_tiempos_llegada_acopio', '10:40');
+        setIfEmpty('reg_tiempos_despacho_acopio', '10:45');
+
+        try {
+            if (selectMedicion && !selectMedicion.value) {
+                selectMedicion.value = 'visual';
+                selectMedicion.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            /* Preseleccionar selects de formulario (excepto ensayo, que queda manual). */
+            setFirstSelectOptionIfEmpty('reg_fundo');
+            sincronizarTrazabilidadRegCampo({});
+            setFirstSelectOptionIfEmpty('reg_traz_etapa');
+            regRefrescarCampoDesdeEtapaActual();
+            setFirstSelectOptionIfEmpty('reg_traz_campo');
+            setFirstSelectOptionIfEmpty('reg_variedad');
+            setFirstSelectOptionIfEmpty('reg_jarras_n_jarra');
+            setFirstSelectOptionIfEmpty('reg_jarras_tipo');
+            if (tipoActual === 'visual' || tipoActual === 'acopio') {
+                if (!ensayoActual) ensayoActual = '1';
+                restaurarDatosEnsayo(tipoActual, ensayoActual);
+            }
+        } catch (eSeed) {}
+
+        window.__mttpSeedCampoApplied = true;
+    }
+
     function calcularTiempoEmpleado(inicio, termino) {
         if (!inicio || !termino) return "0'";
         
@@ -10061,7 +10278,7 @@ function initApp() {
                     const guia_remision = (headerEnsayo.guia_remision != null && headerEnsayo.guia_remision !== '') ? headerEnsayo.guia_remision : elVal('reg_guia_remision');
                     const variedad = (headerEnsayo.variedad != null && headerEnsayo.variedad !== '') ? headerEnsayo.variedad : elVal('reg_variedad');
                     const placa_vehiculo = (headerEnsayo.placa != null && headerEnsayo.placa !== '') ? headerEnsayo.placa : elVal('reg_placa');
-                    const hora_inicio = (headerEnsayo.hora_inicio != null && headerEnsayo.hora_inicio !== '') ? headerEnsayo.hora_inicio : (elVal('reg_hora_inicio') || '07:15');
+                    const hora_inicio = (headerEnsayo.hora_inicio != null && headerEnsayo.hora_inicio !== '') ? headerEnsayo.hora_inicio : (elVal('reg_hora_inicio') || '');
                     const dias_precosecha = (headerEnsayo.dias_precosecha != null && headerEnsayo.dias_precosecha !== '') ? headerEnsayo.dias_precosecha : (elVal('reg_dias_precosecha') || '');
                     const traz_etapa = (headerEnsayo.traz_etapa != null && headerEnsayo.traz_etapa !== '') ? headerEnsayo.traz_etapa : elVal('reg_traz_etapa');
                     const traz_campo = (headerEnsayo.traz_campo != null && headerEnsayo.traz_campo !== '') ? headerEnsayo.traz_campo : elVal('reg_traz_campo');
@@ -10574,6 +10791,8 @@ function initApp() {
             }
         });
     }
+
+    try { aplicarSeedPruebasCampoSiVacio(); } catch (eSeedInit) {}
 }
 
 if (document.readyState === 'loading') {

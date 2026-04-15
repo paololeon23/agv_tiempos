@@ -684,12 +684,8 @@ label .lucide {
     padding: 20px 14px;
     margin: 0 0 12px;
 }
-/*
- * Ocultar hasta fundo A9: en #recepcion-c5 la fila interna ya va en .packing-rc5-oculto (solo dejaba franja vacía).
- * En #formato-packing, .packing-container--fundo-a9 la pone syncThermoKingWrapperVisibility() cuando view_fundo es A9.
- */
-#view_packing_container.packing-route--recepcion-c5 .packing-datos-top-block:not(.packing-datos-top-block--c5),
-#view_packing_container:not(.packing-route--recepcion-c5):not(.packing-container--fundo-a9) .packing-datos-top-block:not(.packing-datos-top-block--c5) {
+/* En #recepcion-c5 se oculta esta franja (usa su propio bloque meta C5). En #formato-packing SIEMPRE visible. */
+#view_packing_container.packing-route--recepcion-c5 .packing-datos-top-block:not(.packing-datos-top-block--c5) {
     display: none !important;
 }
 .packing-datos-top-block > .row {
@@ -2691,8 +2687,23 @@ label .lucide {
     .main-content { 
         padding: 10px; 
     }
+    header {
+        gap: 14px;
+        align-items: center;
+    }
     header h1 { 
         font-size: 1.4rem; 
+        margin: 0 10px 0 0;
+        line-height: 1.15;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .menu-btn {
+        flex-shrink: 0;
+    }
+    .status-card {
+        margin-left: 6px;
+        flex-shrink: 0;
     }
 }
 
@@ -2921,28 +2932,11 @@ input[type="time"]::-webkit-calendar-picker-indicator {
         opacity: 0.9;
         filter: contrast(1.05) saturate(1.05);
     }
-    .input-table-row select {
-        min-height: 34px !important;
-        line-height: 1.15;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 8px !important;
-        background-color: #ffffff !important;
-        padding: 0 28px 0 8px !important;
-        font-size: 15px !important;
-        transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
-        -webkit-appearance: none;
-        appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5l5 5 5-5' stroke='%23647B92' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 7px center;
-        background-size: 14px 14px;
-    }
     .input-table-row td:focus-within {
         background: #eef6ff;
     }
     .table-field-style input[type="time"]:focus,
-    .input-table-row input[type="time"]:focus,
-    .input-table-row select:focus {
+    .input-table-row input[type="time"]:focus {
         outline: none;
         border-color: #2f7cc0 !important;
         box-shadow: 0 0 0 2px rgba(47, 124, 192, 0.18);
@@ -2962,6 +2956,10 @@ input[type="time"]::-webkit-calendar-picker-indicator {
         background-repeat: no-repeat;
         background-position: center center;
         background-size: 92px 18px;
+    }
+    /* Cabecera/meta de Packing: "00:00" más pegado a la izquierda. */
+    .packing-meta-block .packing-native-time-wrap input[type="time"].time-ghost-empty {
+        background-position: left 12px center;
     }
     .table-field-style input[type="time"].time-ghost-empty::-webkit-calendar-picker-indicator,
     .input-table-row input[type="time"].time-ghost-empty::-webkit-calendar-picker-indicator,
