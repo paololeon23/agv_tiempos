@@ -548,10 +548,6 @@ function bindMobileTimeGhostPlaceholders(root) {
     );
     var syncGhost = function (el) {
         if (!el) return;
-        if (el === document.activeElement) {
-            el.classList.remove('time-ghost-empty');
-            return;
-        }
         if (String(el.value || '').trim()) el.classList.remove('time-ghost-empty');
         else el.classList.add('time-ghost-empty');
     };

@@ -421,10 +421,14 @@ header {
 /* El contador de pendientes (Fila inferior) */
 #pending-count {
     background-color: rgba(0, 0, 0, 0.1); /* Fondo sutil */
-    padding: 2px 6px;
+    padding: 2px 10px;
     border-radius: 6px;
-    width: 100%;
-    text-align: center;
+    width: auto;
+    min-width: max-content;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
     font-size: 0.7rem;
 }
 
