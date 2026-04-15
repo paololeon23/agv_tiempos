@@ -390,14 +390,27 @@ function abrirPickerHoraCompacto(el) {
     if (!el) return;
     if (el.getAttribute('data-compact-time-opening') === '1') return;
     el.setAttribute('data-compact-time-opening', '1');
+    var scrollWrap = el.closest ? el.closest('.table-scroll') : null;
+    var prevScrollLeft = scrollWrap ? scrollWrap.scrollLeft : 0;
     el.type = 'time';
     el.placeholder = '';
-    try { el.focus(); } catch (e) {}
+    try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) {} }
+    if (scrollWrap) {
+        try { scrollWrap.scrollLeft = prevScrollLeft; } catch (e3) {}
+    }
     setTimeout(function () {
+        if (scrollWrap) {
+            try { scrollWrap.scrollLeft = prevScrollLeft; } catch (e4) {}
+        }
         if (typeof el.showPicker === 'function') {
             try { el.showPicker(); } catch (e2) {}
         }
     }, 0);
+    setTimeout(function () {
+        if (scrollWrap) {
+            try { scrollWrap.scrollLeft = prevScrollLeft; } catch (e5) {}
+        }
+    }, 120);
     setTimeout(function () { el.removeAttribute('data-compact-time-opening'); }, 180);
 }
 

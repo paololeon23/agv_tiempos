@@ -2936,6 +2936,13 @@ input[type="time"]::-webkit-calendar-picker-indicator {
         box-shadow: 0 0 0 2px rgba(47, 124, 192, 0.18);
         background-color: #f8fbff !important;
     }
+    .table-field-style input[data-native-input="time"][data-compact-time-empty="1"]:focus,
+    .input-table-row input[data-native-input="time"][data-compact-time-empty="1"]:focus,
+    .packing-native-time-wrap input[data-native-input="time"][data-compact-time-empty="1"]:focus {
+        border-color: #cbd5e1 !important;
+        box-shadow: none !important;
+        background-color: #ffffff !important;
+    }
     /* Móvil: truco texto→date/time (script.js); mismo tamaño que date/time nativos */
     input[type="text"][data-native-input] {
         color: #333;
