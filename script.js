@@ -333,11 +333,23 @@ function isMobileNativeDatetimeLayout() {
     return typeof window.matchMedia !== 'undefined' && window.matchMedia(MOBILE_NATIVE_DT_MQ).matches;
 }
 
+/**
+ * Fecha/hora dentro de tablas o .packing-native-time-wrap: siempre control nativo (sin placeholder "Seleccionar…").
+ * El truco texto→date/time solo aplica a cabeceras / formulario principal fuera de esos bloques.
+ */
+function isNativeDatetimeInsideExcludedWrapper(el) {
+    if (!el || !el.closest) return false;
+    if (el.closest('.table-field-style')) return true;
+    if (el.closest('.packing-native-time-wrap')) return true;
+    return false;
+}
+
 function shouldBindMobileNativeDatetime(el) {
     if (!el || el.tagName !== 'INPUT') return false;
     if (el.readOnly || el.disabled) return false;
     if (!el.closest) return false;
     if (el.closest('.swal2-container')) return false;
+    if (isNativeDatetimeInsideExcludedWrapper(el)) return false;
     return true;
 }
 
@@ -398,6 +410,16 @@ function onMobileNativeDtBlur(ev) {
 
 function bindMobileNativeDatetimeInputs(root) {
     var scope = root && root.querySelectorAll ? root : document;
+    /* Quitar truco texto en tablas/wraps (p. ej. tras cambiar de reglas o hot reload). */
+    scope.querySelectorAll('input[type="text"][data-native-input]').forEach(function (el) {
+        if (!isNativeDatetimeInsideExcludedWrapper(el)) return;
+        var native = el.getAttribute('data-native-input');
+        el.removeAttribute('data-native-input');
+        el.removeAttribute('data-mobile-dt-bound');
+        el.placeholder = '';
+        if (native === 'date') el.type = 'date';
+        else if (native === 'time') el.type = 'time';
+    });
     var toBind = [];
     scope.querySelectorAll('input[type="date"], input[type="time"]').forEach(function (el) {
         if (shouldBindMobileNativeDatetime(el)) toBind.push(el);
